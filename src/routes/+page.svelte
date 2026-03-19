@@ -10,6 +10,7 @@
         console.log("Connecting to: " + vmId);
 		if (!vmId) return;
 		
+        vncUrl = '';
 		isConnecting = true;
 		try {
 			const res = await fetch(`/api/vnc/${vmId}`, { method: 'POST' });
