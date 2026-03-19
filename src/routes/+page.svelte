@@ -3,9 +3,11 @@
 
 	let vmId = $state('');
 	let vncUrl = $state('');
+	let vncPassword = $state('');
 	let isConnecting = $state(false);
 
 	async function handleConnect() {
+        console.log("Connecting to: " + vmId);
 		if (!vmId) return;
 		
 		isConnecting = true;
@@ -15,6 +17,7 @@
 			
 			const data = await res.json();
 			vncUrl = data.url;
+			vncPassword = data.password;
 		} catch (err) {
 			alert('Fehler beim Abrufen der Konsole');
 		} finally {
@@ -40,7 +43,7 @@
 	{#if vncUrl}
 		<section class="console">
 			<h2>Konsole für VM {vmId}</h2>
-			<VncViewer url={vncUrl} />
+			<VncViewer url={vncUrl} password={vncPassword} />
 		</section>
 	{/if}
 </main>

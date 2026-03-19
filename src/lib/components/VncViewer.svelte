@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	// @ts-expect-error (noVNC hat oft unvollständige Typen)
-	import RFB from '@novnc/novnc/core/rfb';
 
 	interface RFBClient {
 		scaleViewport: boolean;
@@ -10,14 +8,16 @@
 		disconnect(): void;
 	}
 
-	let { url }: { url: string } = $props();
+	let { url, password }: { url: string; password?: string } = $props();
 	let canvasContainer: HTMLDivElement | undefined = $state();
 	let rfb: RFBClient | null = $state(null);
 
-	onMount(() => {
+	onMount(async () => {
 		if (url && canvasContainer) {
+			const { default: RFB } = await import('$lib/novnc/core/rfb.js');
+
 			const client = new RFB(canvasContainer, url, {
-				credentials: { password: '' } // PVE Tickets brauchen meist kein PW hier
+				credentials: { password: password || '' }
 			});
 
 			client.scaleViewport = true;
