@@ -1,52 +1,96 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import * as XTerm from '@xterm/xterm';
+	import { AttachAddon } from '@xterm/addon-attach';
 	import '@xterm/xterm/css/xterm.css';
 
-	let { url, password, user }: { url: string; password?: string; user?: string } = $props();
-	let terminalContainer: HTMLDivElement | undefined = $state();
-	let socket: WebSocket | null = null;
-	
-	onMount(async () => {
-		if (url && terminalContainer) {
-			const { Terminal } = await import('@xterm/xterm');
-			const { AttachAddon } = await import('@xterm/addon-attach');
+	const { Terminal } = XTerm;
 
-			const term = new Terminal({
-				cursorBlink: true,
-				theme: { background: '#1a1a1a' },
-				fontFamily: 'monospace'
-			});
+	let { url, ticket, user }: { url: string; ticket?: string; user?: string } = $props();
+	let terminalContainer: HTMLDivElement;
+	let ws: WebSocket | null = null;
+	let term: XTerm.Terminal;
+
+	let isConnected = $state(false);
+
+	let idlePingInterval: ReturnType<typeof setInterval>;
+
+	onMount(async () => {
+		//if (!terminalContainer || !ws) return;
+
+		console.log('Mounting...');
+
+		term = new Terminal({
+			cursorBlink: true,
+			theme: { background: '#1a1a1a' },
+			fontFamily: 'monospace'
+		});
+
+		const socket = new WebSocket(url);
+		ws = socket;
+		socket.binaryType = 'arraybuffer';
+
+		socket.addEventListener('open', () => {
+			console.log('Terminal connected.');
+		});
+
+		socket.addEventListener('message', (e: MessageEvent) => {
+			const res = new Uint8Array(e.data);
+
+			console.log(res.toString());
+
+			if (!isConnected && res.length === 2 && res[0] === 79 && res[1] === 75) {
+				isConnected = true;
+				console.log('Terminal authenticated.');
+
+				return;
+			}
+
+			term.write(res);
+		});
+
+		socket.onopen = () => {
+			// Proxmox termproxy requires username:ticket as the first message
+			console.log('User: ' + user + ' Ticket: ' + ticket);
+			if (user && ticket) {
+				const authMsg = `${user}:${ticket}\n`;
+				socket.send(authMsg);
+				console.log('Auth handshake sent. AuthMsg: ', authMsg);
+			}
+
+			// Attach xterm AFTER auth so it handles subsequent I/O
+			const attachAddon = new AttachAddon(socket);
+			term.loadAddon(attachAddon);
 
 			term.open(terminalContainer);
-			
-			socket = new WebSocket(url, 'binary');
-			socket.binaryType = 'arraybuffer';
 
-			socket.onopen = () => {
-				console.log('Terminal connected. Waking up TTY implicitly.');
+			setTimeout(() => {
+				if (socket.readyState === 1) socket.send('\n');
+			}, 200);
 
-				// Attach xterm to let it handle I/O naturally
-				const attachAddon = new AttachAddon(socket);
-				term.loadAddon(attachAddon);
+			// Send a ping every 30 seconds to keep the connection alive
+			idlePingInterval = setInterval(() => {
+				if (!isConnected) return;
+				socket.send('2');
+			}, 30_000);
+		};
 
-				// Send an enter keystroke to wake up the TTY login screen!
-				// Proxmox terminals are sometimes already authenticated by vncwebsocket
-				// but just need input to render the initial login prompt.
-				setTimeout(() => {
-					if (socket && socket.readyState === WebSocket.OPEN) {
-						socket.send("\r");
-					}
-				}, 500);
-			};
+		socket.onerror = (e) => {
+			console.error('Terminal WebSocket error:', e);
+		};
 
-			socket.onclose = (e) => {
-				console.log('Terminal disconnected', e.code, e.reason);
-			};
-		}
+		socket.onclose = (e) => {
+			console.log('Terminal disconnected', e.code, e.reason);
+		};
+
+		//term.open(terminalContainer);
 	});
 
 	onDestroy(() => {
-		if (socket) socket.close();
+		if (idlePingInterval) clearInterval(idlePingInterval);
+		if (ws) ws.close();
+		if (term) term.dispose();
+		console.log('Terminal destroyed!');
 	});
 </script>
 
@@ -61,7 +105,7 @@
 		overflow: hidden;
 		padding: 8px;
 	}
-	
+
 	/* Make terminal fill the wrapper */
 	:global(.terminal-wrapper .xterm) {
 		height: 100%;

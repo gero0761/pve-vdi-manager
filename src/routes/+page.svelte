@@ -5,7 +5,7 @@
 
 	let vmId = $state(page.url.searchParams.get('id') || '');
 	let vncUrl = $state('');
-	let vncPassword = $state('');
+	let vncTicket = $state('');
 	let vncUser = $state('');
 	let proxyType = $state('vnc');
 	let isConnecting = $state(false);
@@ -22,7 +22,7 @@
 
 			const data = await res.json();
 			vncUrl = data.url;
-			vncPassword = data.password;
+			vncTicket = data.ticket;
 			vncUser = data.user;
 			proxyType = data.proxyType || 'vnc';
 		} catch (err) {
@@ -30,6 +30,10 @@
 			alert('Fehler beim Abrufen der Konsole');
 		} finally {
 			isConnecting = false;
+			console.log('WS URL: ' + vncUrl + '\n');
+			console.log('Ticket: ' + vncTicket + '\n');
+			console.log('User: ' + vncUser + '\n');
+			console.log('Proxy Type: ' + proxyType + '\n');
 		}
 	}
 </script>
@@ -48,9 +52,9 @@
 		<section class="console">
 			<h2>Konsole für VM {vmId}</h2>
 			{#if proxyType === 'term'}
-				<XtermViewer url={vncUrl} password={vncPassword} user={vncUser} />
+				<XtermViewer url={vncUrl} ticket={vncTicket} user={vncUser} />
 			{:else}
-				<VncViewer url={vncUrl} password={vncPassword} />
+				<VncViewer url={vncUrl} password={vncTicket} />
 			{/if}
 		</section>
 	{/if}

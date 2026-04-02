@@ -1,10 +1,22 @@
 import { PVE_API_URL, PVE_TOKEN_ID, PVE_SECRET } from '$env/static/private';
 
 export async function pveFetch(endpoint: string, options: RequestInit = {}) {
-	process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+	process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // For TLS ignore
+
 	const baseUrl = PVE_API_URL.replace(/\/+$/, '');
+
 	const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
 	const url = path.startsWith('/api2/json') ? `${baseUrl}${path}` : `${baseUrl}/api2/json${path}`;
+
+	console.log(
+		'PVE Fetch: \n',
+		'Base URL: ' + baseUrl + '\n',
+		'Path: ' + path + '\n',
+		'Endpoint: ' + endpoint + '\n',
+		'URL: ' + url + '\n'
+	);
+
 	const headers = {
 		Authorization: `PVEAPIToken=${PVE_TOKEN_ID}=${PVE_SECRET}`,
 		...options.headers
