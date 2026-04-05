@@ -18,7 +18,7 @@
 		isConnecting = true;
 		try {
 			const res = await fetch(`/api/vnc/${vmId}`, { method: 'POST' });
-			if (!res.ok) throw new Error('Verbindung fehlgeschlagen');
+			if (!res.ok) throw new Error('Connection failed');
 
 			const data = await res.json();
 			vncUrl = data.url;
@@ -27,10 +27,10 @@
 			proxyType = data.proxyType || 'vnc';
 		} catch (err) {
 			console.error('Error fetching VNC console:', err);
-			alert('Fehler beim Abrufen der Konsole');
+			alert('Error fetching VNC console');
 		} finally {
 			isConnecting = false;
-			console.log('WS URL: ' + vncUrl + '\n');
+			console.log('Connection URL: ' + vncUrl + '\n');
 			console.log('Ticket: ' + vncTicket + '\n');
 			console.log('User: ' + vncUser + '\n');
 			console.log('Proxy Type: ' + proxyType + '\n');
@@ -42,9 +42,9 @@
 	<h1>PVE-VDI Manager</h1>
 
 	<div class="login-box">
-		<input type="text" bind:value={vmId} placeholder="Deine VM-ID (z.B. 101)" />
+		<input type="text" bind:value={vmId} placeholder="VM ID (e.g. 101)" />
 		<button onclick={handleConnect} disabled={isConnecting}>
-			{isConnecting ? 'Verbinde...' : 'VM Konsole öffnen'}
+			{isConnecting ? 'Connecting...' : 'Open VM Console'}
 		</button>
 	</div>
 
