@@ -2,7 +2,14 @@
 	import { onMount } from 'svelte';
 
 	type Template = { vmid: number; name: string; node: string; type: 'qemu' | 'lxc' };
-	type Instance = { id: string; vmid: number; type: string; node: string; created_at: number };
+	type Instance = {
+		id: string;
+		vmid: number;
+		type: string;
+		node: string;
+		created_at: number;
+		status?: 'running' | 'stopped' | 'unknown' | 'loading';
+	};
 
 	let templates: Template[] = $state([]);
 	let loadingTemplates = $state(true);
@@ -13,22 +20,106 @@
 	let isCloning = $state(false);
 	let cloneError = $state('');
 
-	let generatedInstances: Instance[] = $state([]);
+	let instances: Instance[] = $state([]);
 
-	onMount(async () => {
+	async function fetchInstanceStatus(id: string) {
 		try {
-			const res = await fetch('/api/pve/templates');
+			const res = await fetch(`/api/pve/instances/${id}`);
 			const data = await res.json();
-			if (data.error) {
-				templateError = data.error;
-			} else {
-				templates = data.templates || [];
+			const inst = instances.find((i) => i.id === id);
+			if (inst) {
+				inst.status = data.status || 'unknown';
 			}
 		} catch (e) {
-			templateError = e instanceof Error ? e.message : String(e);
-		} finally {
-			loadingTemplates = false;
+			console.error(`Failed to fetch status for ${id}:`, e);
 		}
+	}
+
+	async function performAction(id: string, action: 'stop' | 'start' | 'shutdown') {
+		const inst = instances.find((i) => i.id === id);
+		if (inst) inst.status = 'loading';
+
+		try {
+			const res = await fetch(`/api/pve/instances/${id}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action })
+			});
+			const data = await res.json();
+			if (data.error) {
+				alert(`Action failed: ${data.error}`);
+			}
+			await fetchInstanceStatus(id);
+		} catch (e) {
+			alert(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+			await fetchInstanceStatus(id);
+		}
+	}
+
+	async function deleteInstance(id: string) {
+		if (!confirm('Are you sure you want to delete this instance from Proxmox and our database?')) {
+			return;
+		}
+
+		const inst = instances.find((i) => i.id === id);
+		if (inst) inst.status = 'loading';
+
+		try {
+			const res = await fetch(`/api/pve/instances/${id}`, {
+				method: 'DELETE'
+			});
+			const data = await res.json();
+			if (data.error) {
+				alert(`Delete failed: ${data.error}`);
+				await fetchInstanceStatus(id);
+			} else {
+				instances = instances.filter((i) => i.id !== id);
+			}
+		} catch (e) {
+			alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+			await fetchInstanceStatus(id);
+		}
+	}
+
+	onMount(() => {
+		const loadData = async () => {
+			// Fetch templates
+			try {
+				const res = await fetch('/api/pve/templates');
+				const data = await res.json();
+				if (data.error) {
+					templateError = data.error;
+				} else {
+					templates = data.templates || [];
+				}
+			} catch (e) {
+				templateError = e instanceof Error ? e.message : String(e);
+			} finally {
+				loadingTemplates = false;
+			}
+
+			// Fetch existing instances
+			try {
+				const res = await fetch('/api/pve/instances');
+				const data = await res.json();
+				if (!data.error) {
+					instances = (data.instances || []).map((i: Instance) => ({ ...i, status: 'loading' }));
+					// Fetch initial status for all
+					instances.forEach((inst) => fetchInstanceStatus(inst.id));
+				}
+			} catch (e) {
+				console.error('Failed to fetch instances:', e);
+			}
+		};
+
+		loadData();
+
+		// Polling for status
+		const interval = setInterval(() => {
+			instances.forEach((inst) => fetchInstanceStatus(inst.id));
+		}, 10000);
+
+		return () => clearInterval(interval);
 	});
 
 	async function handleDeploy() {
@@ -54,7 +145,12 @@
 			if (data.error) {
 				cloneError = data.error;
 			} else {
-				generatedInstances = [...data.clones, ...generatedInstances];
+				const newClones = (data.clones as Instance[]).map((c) => ({
+					...c,
+					status: 'loading' as const
+				}));
+				instances = [...newClones, ...instances];
+				newClones.forEach((c) => fetchInstanceStatus(c.id));
 			}
 		} catch (e) {
 			cloneError = e instanceof Error ? e.message : String(e);
@@ -64,10 +160,10 @@
 	}
 </script>
 
-<div class="mx-auto max-w-4xl space-y-8 p-6">
+<div class="mx-auto max-w-5xl space-y-8 p-6">
 	<div class="flex items-center justify-between">
 		<h1
-			class="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-3xl font-bold text-transparent"
+			class="bg-linear-to-r from-blue-600 to-indigo-600 bg-clip-text text-3xl font-bold text-transparent"
 		>
 			VDI Admin Control Panel
 		</h1>
@@ -125,7 +221,9 @@
 			</h2>
 			<div class="flex flex-col items-end gap-4 md:flex-row">
 				<div class="flex-1 space-y-2">
-					<label for="template-select" class="block text-sm font-medium text-slate-700">Select Template</label>
+					<label for="template-select" class="block text-sm font-medium text-slate-700"
+						>Select Template</label
+					>
 					<select
 						id="template-select"
 						bind:value={selectedTemplateIndex}
@@ -169,56 +267,100 @@
 		</div>
 	{/if}
 
-	{#if generatedInstances.length > 0}
+	{#if instances.length > 0}
 		<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-			<div class="border-b border-slate-200 bg-slate-50 px-6 py-4">
+			<div
+				class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4"
+			>
 				<h3 class="text-lg font-bold text-slate-800">
-					Generated Instances ({generatedInstances.length})
+					All Active Instances ({instances.length})
 				</h3>
+				<span class="text-xs text-slate-400">Updates every 10s</span>
 			</div>
 			<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm whitespace-nowrap">
 					<thead class="bg-slate-50 text-xs text-slate-500 uppercase">
 						<tr>
+							<th class="px-6 py-3 text-center">Status</th>
 							<th class="px-6 py-3">Access ID</th>
 							<th class="px-6 py-3">Target VMID</th>
 							<th class="px-6 py-3">Type</th>
-							<th class="px-6 py-3">Node</th>
-							<th class="px-6 py-3">Direct Link</th>
+							<th class="px-6 py-3">Actions</th>
+							<th class="px-6 py-3 text-right">Delete</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-slate-200">
-						{#each generatedInstances as inst (inst.id)}
+						{#each instances as inst (inst.id)}
 							<tr class="transition-colors hover:bg-indigo-50/30">
-								<td class="px-6 py-4 font-mono font-medium text-indigo-600">{inst.id}</td>
+								<td class="px-6 py-4 text-center">
+									{#if inst.status === 'running'}
+										<span
+											class="mx-auto flex h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
+											title="Running"
+										></span>
+									{:else if inst.status === 'stopped'}
+										<span class="mx-auto flex h-3 w-3 rounded-full bg-slate-300" title="Stopped"
+										></span>
+									{:else}
+										<span
+											class="mx-auto flex h-3 w-3 animate-pulse rounded-full bg-amber-400"
+											title="Loading/Unknown"
+										></span>
+									{/if}
+								</td>
+								<td class="px-6 py-4 font-mono font-medium text-indigo-600">
+									<a href="/?id={inst.id}" target="_blank" class="hover:underline">{inst.id}</a>
+								</td>
 								<td class="px-6 py-4 text-slate-600">{inst.vmid}</td>
 								<td class="px-6 py-4">
 									<span
-										class="rounded px-2 py-1 text-xs font-semibold
+										class="rounded px-2 py-1 text-[10px] font-bold uppercase
                                         {inst.type === 'qemu'
 											? 'bg-sky-100 text-sky-700'
 											: 'bg-fuchsia-100 text-fuchsia-700'}"
 									>
-										{inst.type.toUpperCase()}
+										{inst.type}
 									</span>
 								</td>
-								<td class="px-6 py-4 text-slate-600">{inst.node}</td>
-								<td class="px-6 py-4">
-									<a
-										href="/?id={inst.id}"
-										target="_blank"
-										class="inline-flex items-center gap-1 font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+								<td class="space-x-2 px-6 py-4">
+									<button
+										onclick={() => performAction(inst.id, 'start')}
+										disabled={inst.status === 'running' || inst.status === 'loading'}
+										class="rounded bg-emerald-50 p-1.5 text-emerald-600 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-30"
+										title="Start"
 									>
-										Open Web VNC
+										<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"
+											><path
+												d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z"
+											/></svg
+										>
+									</button>
+									<button
+										onclick={() => performAction(inst.id, 'stop')}
+										disabled={inst.status === 'stopped' || inst.status === 'loading'}
+										class="rounded bg-amber-50 p-1.5 text-amber-600 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-30"
+										title="Stop"
+									>
+										<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"
+											><path d="M5 4h3v12H5V4Zm7 0h3v12h-3V4Z" /></svg
+										>
+									</button>
+								</td>
+								<td class="px-6 py-4 text-right">
+									<button
+										onclick={() => deleteInstance(inst.id)}
+										class="rounded bg-red-50 p-1.5 text-red-600 transition-colors hover:bg-red-100"
+										title="Delete Instance"
+									>
 										<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
 											><path
 												stroke-linecap="round"
 												stroke-linejoin="round"
 												stroke-width="2"
-												d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+												d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
 											/></svg
 										>
-									</a>
+									</button>
 								</td>
 							</tr>
 						{/each}

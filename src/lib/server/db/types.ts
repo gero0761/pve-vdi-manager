@@ -9,5 +9,6 @@ export interface VDIInstance {
 export interface DatabaseAdapter {
 	getInstanceById(id: string): VDIInstance | undefined;
 	createInstance(instance: VDIInstance): void;
+	deleteInstance(id: string): void;
 	getAllInstances(): VDIInstance[];
 }

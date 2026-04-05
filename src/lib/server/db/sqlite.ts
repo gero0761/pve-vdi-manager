@@ -25,6 +25,10 @@ export const sqliteAdapter: DatabaseAdapter = {
 		const stmt = db.prepare('INSERT INTO instances (id, vmid, type, node, created_at) VALUES (?, ?, ?, ?, ?)');
 		stmt.run(instance.id, instance.vmid, instance.type, instance.node, instance.created_at);
 	},
+	deleteInstance(id: string): void {
+		const stmt = db.prepare('DELETE FROM instances WHERE id = ?');
+		stmt.run(id);
+	},
 	getAllInstances(): VDIInstance[] {
 		const stmt = db.prepare('SELECT * FROM instances ORDER BY created_at DESC');
 		return stmt.all() as VDIInstance[];
