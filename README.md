@@ -38,6 +38,10 @@ Whether you need a clean environment for testing kernel modules, a sandboxed dev
 Create a `.env` file in the root directory:
 
 ```bash
+# Application Configuration
+APP_PORT=4173
+
+# Proxmox API Configuration
 PVE_HOST=192.168.1.100
 PVE_PORT=8006
 PVE_USER=svcVDIManager@pam
