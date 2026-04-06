@@ -66,18 +66,34 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	// WSS-URL muss nun unseren SvelteKit/Vite Server ansprechen, der als Proxy fungiert.
 	// Das umgeht die Browser-Zertifikatwarnung komplett!
 	const url = new URL(request.url);
-	const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-	const connectionUrl =
-		type === 'lxc'
-			? `${protocol}//${url.host}/api2/json/nodes/${node}/${type}/${vmid}/vncwebsocket?port=${data.port}&vncticket=${encodeURIComponent(data.ticket)}&tmpTicket=${encodeURIComponent(accessTicket)}`
-			: `${protocol}//${url.host}/api2/json/nodes/${node}/${type}/${vmid}/vncwebsocket?node=${node}&port=${data.port}&vmid=${vmid}&vncticket=${encodeURIComponent(data.ticket)}`;
+
+	// 1. Host vom Browser abgreifen (z.B. localhost:4173 oder vdi.deine-domain.de)
+	const host = request.headers.get('host') || url.host;
+
+	const referer = request.headers.get('referer') || '';
+	let protocol = 'ws:';
+
+	if (referer.startsWith('https://')) {
+		protocol = 'wss:';
+	}
 
 	console.log(
-		'Connection URL: ' + connectionUrl + '\n',
-		'Data: ' + JSON.stringify(data) + '\n',
+		`[Protocol-Debug] URL-Referer: ${referer} -> Result: ${protocol}`,
+		'Host: ' + host + '\n',
+		`URL: ${url}\n\n`
+	);
+
+	const connectionUrl =
+		type === 'lxc'
+			? `${protocol}//${host}/api2/json/nodes/${node}/${type}/${vmid}/vncwebsocket?port=${data.port}&vncticket=${encodeURIComponent(data.ticket)}&tmpTicket=${encodeURIComponent(accessTicket)}`
+			: `${protocol}//${host}/api2/json/nodes/${node}/${type}/${vmid}/vncwebsocket?node=${node}&port=${data.port}&vmid=${vmid}&vncticket=${encodeURIComponent(data.ticket)}`;
+
+	console.log(
+		'[Connection] URL: ' + connectionUrl + '\n',
+		//'Data: ' + JSON.stringify(data) + '\n',
 		/* 'Ticket: ' + data.ticket + '\n', */
 		'User: ' + data.user + '\n',
-		'Proxy Type: ' + type + '\n'
+		'Proxy Type: ' + type + '\n\n'
 	);
 
 	return json({

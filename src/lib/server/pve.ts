@@ -13,16 +13,18 @@ export async function pveFetch(
 
 	const url = path.startsWith('/api2/json') ? `${baseUrl}${path}` : `${baseUrl}/api2/json${path}`;
 
-	console.log(
-		'PVE Fetch: \n',
+	/* console.log(
+		'[PVE Fetch]: \n',
 		'Base URL: ' + baseUrl + '\n',
 		'Path: ' + path + '\n',
 		'Endpoint: ' + endpoint + '\n',
 		'URL: ' + url + '\n',
 		'Auth Method: ' + (auth === 'none' ? 'None' : auth ? 'Ticket' : 'Token') + '\n'
-	);
+	); */
 
-	const headers: Record<string, string> = { ...((options.headers as Record<string, string>) || {}) };
+	const headers: Record<string, string> = {
+		...((options.headers as Record<string, string>) || {})
+	};
 
 	if (auth === 'none') {
 		// No auth headers

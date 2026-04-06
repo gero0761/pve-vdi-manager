@@ -63,7 +63,8 @@
 			console.log('Authenticating...');
 			const authMsg = `${user}:${ticket}\n`;
 			socket.send(encoder.encode(authMsg));
-			console.log('Auth handshake sent. AuthMsg: ', authMsg);
+			//console.log('Auth handshake sent. AuthMsg: ', authMsg);
+			console.log('Auth handshake sent.');
 
 			// 2. TERMINAL ANZEIGEN & GRÖSSE ANPASSEN
 			term.open(terminalContainer);

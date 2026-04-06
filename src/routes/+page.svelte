@@ -30,10 +30,10 @@
 			alert('Error fetching VNC console');
 		} finally {
 			isConnecting = false;
-			console.log('Connection URL: ' + vncUrl + '\n');
+			/* console.log('Connection URL: ' + vncUrl + '\n');
 			console.log('Ticket: ' + vncTicket + '\n');
 			console.log('User: ' + vncUser + '\n');
-			console.log('Proxy Type: ' + proxyType + '\n');
+			console.log('Proxy Type: ' + proxyType + '\n'); */
 		}
 	}
 </script>

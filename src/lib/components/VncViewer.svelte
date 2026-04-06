@@ -23,8 +23,10 @@
 			client.scaleViewport = true;
 			client.resizeSession = true;
 
-			client.addEventListener('connect', () => console.log('VNC Verbunden'));
-			client.addEventListener('disconnect', (e: CustomEvent) => console.log('VNC Getrennt', e.detail.clean));
+			client.addEventListener('connect', () => console.log('VNC Connected'));
+			client.addEventListener('disconnect', (e: CustomEvent) =>
+				console.log('VNC Disconnected', e.detail.clean)
+			);
 
 			rfb = client;
 		}
