@@ -1,5 +1,5 @@
 <div align="center" width="100%">
-    <img src="https://raw.githubusercontent.com/gero0761/pve-vdi-manager/refs/heads/main/static/pve-vdi-logo.svg" width="150" />
+    <img src="/static/pve-vdi-logo.svg" width="150" />
 </div>
 
 <div align="center" width="100%">
