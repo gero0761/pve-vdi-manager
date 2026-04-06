@@ -1,5 +1,5 @@
 <div align="center" width="100%">
-    <img src="/static/pve-vdi-logo.svg" width="150" />
+    <img src="/static/pve-vdi-logo.svg" width="660" />
 </div>
 
 <div align="center" width="100%">
