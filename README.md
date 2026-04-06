@@ -1,5 +1,5 @@
 <div align="center" width="100%">
-    <img src="https://user-images.githubusercontent.com/30373916/227715640-22e0fa02-8f17-4fbd-a81d-4a010007972a.png" width="150" />
+    <img src="https://raw.githubusercontent.com/gero0761/pve-vdi-manager/refs/heads/main/static/pve-vdi-logo.svg" width="150" />
 </div>
 
 <div align="center" width="100%">
@@ -39,13 +39,15 @@ Create a `.env` file in the root directory:
 
 ```bash
 # Application Configuration
-APP_PORT=4173
+APP_HOST=0.0.0.0
+APP_PORT=3000
 
 # Proxmox API Configuration
-PVE_HOST=192.168.1.100
-PVE_PORT=8006
-PVE_USER=svcVDIManager@pam
-PVE_PASSWORD=your_secure_password
+
+PVE_API_URL=https://[PROXMOX_IP]:8006
+PVE_TOKEN_ID=YOUR_SERVICE_USER_TOKEN_ID
+PVE_SECRET=YOUR_TOKEN_SECRET
+PVE_PASSWORD=YOUR_SERVICE_USER_PAM_PASSWORD
 ```
 
 ### 2. Install & Run
@@ -54,8 +56,11 @@ PVE_PASSWORD=your_secure_password
 # Install dependencies
 npm install
 
-# Start development server with proxy
-npm run dev
+# Build Project
+npm run build
+
+# Start Node Server
+npm run start
 ```
 
 In Dev Mode the application will be available at `http://localhost:5173`. Keyboard inputs and terminal output are forwarded in real-time via the configured WebSocket tunnel to the Proxmox host.
@@ -72,12 +77,9 @@ The project uses a proxy-logic to bypass common WebSocket authentication hurdles
 ## 🛠️ Development Commands
 
 ```bash
-# Run Svelte/Vite in dev mode
+# To start the Svelte/Vite development server with proxy
 npm run dev
 
 # Build for production
 npm run build
-
-# Preview production build
-npm run preview
 ```
