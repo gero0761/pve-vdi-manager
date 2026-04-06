@@ -162,11 +162,9 @@
 
 <div class="mx-auto max-w-5xl space-y-8 p-6">
 	<div class="flex items-center justify-between">
-		<h1
-			class="bg-linear-to-r from-blue-600 to-indigo-600 bg-clip-text text-3xl font-bold text-transparent"
-		>
-			VDI Admin Control Panel
-		</h1>
+		<a href="https://github.com/gero0761/pve-vdi-manager">
+			<img src="/pve-vdi-logo_dark.svg" width="660" alt="PVE VDI Manager" />
+		</a>
 		<div
 			class="rounded border bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 shadow-inner"
 		>

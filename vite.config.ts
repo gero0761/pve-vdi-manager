@@ -6,7 +6,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
-	const targetUrl = new URL(env.PVE_API_URL || 'https://192.168.100.11:8006').origin;
+	const targetUrl = new URL(env.PVE_API_URL).origin;
 
 	return {
 		plugins: [tailwindcss(), sveltekit()],
@@ -43,7 +43,7 @@ export default defineConfig(({ mode }) => {
 							proxyReq.setHeader('Host', targetHost);
 
 							// Wir extrahieren das Ticket aus der URL des Requests
-							const url = new URL(req.url || '', `http://${req.headers.host}`);
+							const url = new URL(req.url || '', `${req.headers.protocol}://${req.headers.host}`);
 							const ticket = url.searchParams.get('tmpTicket');
 
 							if (ticket) {
