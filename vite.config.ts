@@ -6,7 +6,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
-	const targetUrl = new URL(env.PVE_API_URL).origin || 'https://example.com';
+	const targetUrl = new URL(env.PVE_API_URL || 'http://localhost:8006').origin;
 
 	return {
 		plugins: [tailwindcss(), sveltekit()],
