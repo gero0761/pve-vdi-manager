@@ -1,4 +1,5 @@
-import { PVE_API_URL, PVE_TOKEN_ID, PVE_SECRET, PVE_PASSWORD } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+const { PVE_API_URL, PVE_TOKEN_ID, PVE_SECRET, PVE_PASSWORD } = env;
 
 export async function pveFetch(
 	endpoint: string,
