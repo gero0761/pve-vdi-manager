@@ -5,6 +5,9 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
+# Copy .env.example to .env for building
+RUN cp .env.example .env
+
 # Generating .svelte-kit folder
 RUN npx svelte-kit sync
 
