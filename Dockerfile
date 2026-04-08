@@ -1,17 +1,18 @@
-FROM node:lts-alpine
-
+# Build Stage
+FROM node:20-slim AS builder
 WORKDIR /app
-
 COPY package*.json ./
-COPY server.mjs ./
-
-RUN npm ci
-
-COPY . ./
+RUN npm install
+COPY . .
 
 RUN npm run build
 
-ENV APP_HOST=0.0.0.0
-ENV APP_PORT=3000
+# Production Stage
+FROM node:20-slim
+WORKDIR /app
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/server.mjs .
+COPY package*.json ./
+RUN npm install --production
 
-CMD ["npm", "run", "start"]
+CMD ["node", "server.mjs"]
