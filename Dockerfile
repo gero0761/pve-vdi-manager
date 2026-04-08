@@ -5,6 +5,9 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
+# Generating .svelte-kit folder
+RUN npx svelte-kit sync
+
 RUN npm run build
 
 # Production Stage
