@@ -63,11 +63,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	const { data } = await response.json();
 
-	// WSS-URL muss nun unseren SvelteKit/Vite Server ansprechen, der als Proxy fungiert.
-	// Das umgeht die Browser-Zertifikatwarnung komplett!
+	// WSS URL must now address our SvelteKit/Vite Server, which acts as a proxy.
 	const url = new URL(request.url);
 
-	// 1. Host vom Browser abgreifen (z.B. localhost:4173 oder vdi.deine-domain.de)
+	// Get Host from Browser (e.g. localhost:4173)
 	const host = request.headers.get('host') || url.host;
 
 	const referer = request.headers.get('referer') || '';
