@@ -85,7 +85,7 @@ export async function POST({ request }) {
 				created_at: Date.now()
 			};
 
-			db.createInstance(instance);
+			await db.createInstance(instance);
 			clones.push(instance);
 
 			// Small buffer between iterations to give the API some time

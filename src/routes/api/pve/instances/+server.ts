@@ -3,7 +3,7 @@ import { db } from '$lib/server/db';
 
 export async function GET() {
 	try {
-		const instances = db.getAllInstances();
+		const instances = await db.getAllInstances();
 		return json({ instances });
 	} catch (err) {
 		console.error('Fetch instances error:', err);
