@@ -9,6 +9,7 @@
 		node: string;
 		created_at: number;
 		status?: 'running' | 'stopped' | 'unknown' | 'loading';
+		ip?: string | null;
 	};
 
 	let templates: Template[] = $state([]);
@@ -29,6 +30,7 @@
 			const inst = instances.find((i) => i.id === id);
 			if (inst) {
 				inst.status = data.status || 'unknown';
+				inst.ip = data.ip || null;
 			}
 		} catch (e) {
 			console.error(`Failed to fetch status for ${id}:`, e);
@@ -283,6 +285,7 @@
 							<th class="px-6 py-3">Access ID</th>
 							<th class="px-6 py-3">Target VMID</th>
 							<th class="px-6 py-3">Type</th>
+							<th class="px-6 py-3">IP Address</th>
 							<th class="px-6 py-3">Actions</th>
 							<th class="px-6 py-3 text-right">Delete</th>
 						</tr>
@@ -320,6 +323,15 @@
 										{inst.type}
 									</span>
 								</td>
+								<td class="px-6 py-4">
+									{#if inst.ip}
+										<span class="font-mono text-xs text-slate-700">{inst.ip}</span>
+									{:else if inst.status === 'running'}
+										<span class="text-xs italic text-slate-400">Fetching...</span>
+									{:else}
+										<span class="text-xs text-slate-300">—</span>
+									{/if}
+								</td>
 								<td class="space-x-2 px-6 py-4">
 									<button
 										onclick={() => performAction(inst.id, 'start')}
@@ -340,15 +352,16 @@
 										title="Stop"
 									>
 										<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"
-											><path d="M5 4h3v12H5V4Zm7 0h3v12h-3V4Z" /></svg
+											><path d="M5 5h10v10H5z" /></svg
 										>
 									</button>
 								</td>
 								<td class="px-6 py-4 text-right">
 									<button
 										onclick={() => deleteInstance(inst.id)}
-										class="rounded bg-red-50 p-1.5 text-red-600 transition-colors hover:bg-red-100"
-										title="Delete Instance"
+										disabled={inst.status !== 'stopped'}
+										class="rounded bg-red-50 p-1.5 text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-30"
+										title="Delete Instance (Only if stopped)"
 									>
 										<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
 											><path

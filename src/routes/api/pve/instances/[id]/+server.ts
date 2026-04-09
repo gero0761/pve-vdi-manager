@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { pveFetch } from '$lib/server/pve';
 
-// GET /api/pve/instances/[id] -> Get current status from Proxmox
+// GET /api/pve/instances/[id] -> Get current status and IP from Proxmox
 export async function GET({ params }) {
 	const { id } = params;
 	const instance = await db.getInstanceById(id);
@@ -12,9 +12,49 @@ export async function GET({ params }) {
 	}
 
 	try {
-		const res = await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/current`);
-		const data = await res.json();
-		return json({ status: data.data.status }); // 'running', 'stopped', etc.
+		const statusRes = await pveFetch(
+			`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/current`
+		);
+		const statusData = await statusRes.json();
+		const status = statusData.data.status;
+
+		let ip = null;
+
+		if (status === 'running') {
+			try {
+				if (instance.type === 'lxc') {
+					const netRes = await pveFetch(`/nodes/${instance.node}/lxc/${instance.vmid}/interfaces`);
+					const netData = await netRes.json();
+					// Find first non-loopback IPv4
+					const iface = netData.data.find(
+						(i: any) => i.inet && !i.inet.startsWith('127.') && !i.inet.startsWith('::')
+					);
+					if (iface) {
+						ip = iface.inet.split('/')[0];
+					}
+				} else if (instance.type === 'qemu') {
+					const agentRes = await pveFetch(
+						`/nodes/${instance.node}/qemu/${instance.vmid}/agent/network-get-interfaces`
+					);
+					const agentData = await agentRes.json();
+					if (agentData.data && Array.isArray(agentData.data)) {
+						for (const iface of agentData.data) {
+							if (iface.name === 'lo') continue;
+							const addr = iface['ip-addresses']?.find((a: any) => a['ip-address-type'] === 'ipv4');
+							if (addr && !addr['ip-address'].startsWith('127.')) {
+								ip = addr['ip-address'];
+								break;
+							}
+						}
+					}
+				}
+			} catch (e) {
+				// Guest agent might not be running or supported
+				//console.warn(`Could not fetch IP for ${instance.id}:`, e);
+			}
+		}
+
+		return json({ status, ip });
 	} catch (err) {
 		console.error('Fetch status error:', err);
 		return json({ error: 'Failed to fetch status from Proxmox' }, { status: 500 });
