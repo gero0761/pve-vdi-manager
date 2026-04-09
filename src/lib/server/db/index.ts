@@ -1,8 +1,11 @@
+import { env } from '$env/dynamic/private';
 import { sqliteAdapter } from './sqlite';
+import { mysqlAdapter } from './mysql';
 import type { DatabaseAdapter } from './types';
 
-// We export the selected database adapter here.
-// To use MySQL or Postgres in the future, you would implement a new adapter
-// matching the DatabaseAdapter interface and export it here instead.
+const { DB_TYPE } = env;
 
-export const db: DatabaseAdapter = sqliteAdapter;
+// Select the database adapter based on configuration
+export const db: DatabaseAdapter = DB_TYPE === 'mysql' ? mysqlAdapter : sqliteAdapter;
+
+console.log(`Database initialized using ${DB_TYPE === 'mysql' ? 'MySQL' : 'SQLite'} adapter`);

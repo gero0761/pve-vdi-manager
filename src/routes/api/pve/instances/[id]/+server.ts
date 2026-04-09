@@ -5,7 +5,7 @@ import { pveFetch } from '$lib/server/pve';
 // GET /api/pve/instances/[id] -> Get current status from Proxmox
 export async function GET({ params }) {
 	const { id } = params;
-	const instance = db.getInstanceById(id);
+	const instance = await db.getInstanceById(id);
 
 	if (!instance) {
 		return json({ error: 'Instance not found' }, { status: 404 });
@@ -25,7 +25,7 @@ export async function GET({ params }) {
 export async function POST({ params, request }) {
 	const { id } = params;
 	const { action } = await request.json();
-	const instance = db.getInstanceById(id);
+	const instance = await db.getInstanceById(id);
 
 	if (!instance) {
 		return json({ error: 'Instance not found' }, { status: 404 });
@@ -49,7 +49,7 @@ export async function POST({ params, request }) {
 // DELETE /api/pve/instances/[id] -> Delete from Proxmox and DB
 export async function DELETE({ params }) {
 	const { id } = params;
-	const instance = db.getInstanceById(id);
+	const instance = await db.getInstanceById(id);
 
 	if (!instance) {
 		return json({ error: 'Instance not found' }, { status: 404 });
@@ -73,7 +73,7 @@ export async function DELETE({ params }) {
 		});
 
 		// 3. Delete from DB
-		db.deleteInstance(id);
+		await db.deleteInstance(id);
 
 		return json({ success: true });
 	} catch (err) {

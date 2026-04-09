@@ -7,8 +7,8 @@ export interface VDIInstance {
 }
 
 export interface DatabaseAdapter {
-	getInstanceById(id: string): VDIInstance | undefined;
-	createInstance(instance: VDIInstance): void;
-	deleteInstance(id: string): void;
-	getAllInstances(): VDIInstance[];
+	getInstanceById(id: string): Promise<VDIInstance | undefined>;
+	createInstance(instance: VDIInstance): Promise<void>;
+	deleteInstance(id: string): Promise<void>;
+	getAllInstances(): Promise<VDIInstance[]>;
 }

@@ -9,7 +9,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		return json({ error: 'Missing ID parameter' }, { status: 400 });
 	}
 
-	const instance = db.getInstanceById(id);
+	const instance = await db.getInstanceById(id);
 	if (!instance) {
 		return json({ error: 'Provided ID is invalid or instance does not exist' }, { status: 404 });
 	}
