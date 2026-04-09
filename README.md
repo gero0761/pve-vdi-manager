@@ -5,9 +5,9 @@
 <div align="center" width="100%">
     <h2>PVE VDI Manager</h2>
     <p>A lightweight, web-based VDI solution to manage and access Proxmox LXC containers and VMs with ease.</p>
-    <a target="_blank" href="https://github.com/gero0761/pve-vdi-manage/stargazers"><img src="https://img.shields.io/github/stars/gero0761/pve-vdi-manage" /></a>
-    <a target="_blank" href="https://github.com/gero0761/pve-vdi-manage/releases"><img src="https://img.shields.io/github/v/release/gero0761/pve-vdi-manage?display_name=tag" /></a>
-    <a target="_blank" href="https://github.com/gero0761/pve-vdi-manage/commits/main"><img src="https://img.shields.io/github/last-commit/gero0761/pve-vdi-manage" /></a>
+    <a target="_blank" href="https://github.com/gero0761/pve-vdi-manager/stargazers"><img src="https://img.shields.io/github/stars/gero0761/pve-vdi-manager" /></a>
+    <a target="_blank" href="https://github.com/gero0761/pve-vdi-manager/releases"><img src="https://img.shields.io/github/v/release/gero0761/pve-vdi-manager?display_name=tag" /></a>
+    <a target="_blank" href="https://github.com/gero0761/pve-vdi-manager/commits/main"><img src="https://img.shields.io/github/last-commit/gero0761/pve-vdi-manager" /></a>
 </div>
 
 ## ✨ Features
