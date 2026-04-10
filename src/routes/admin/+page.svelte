@@ -37,7 +37,7 @@
 		}
 	}
 
-	async function performAction(id: string, action: 'stop' | 'start' | 'shutdown') {
+	async function doAction(id: string, action: 'stop' | 'start' | 'shutdown', silent = false) {
 		const inst = instances.find((i) => i.id === id);
 		if (inst) inst.status = 'loading';
 
@@ -49,20 +49,22 @@
 			});
 			const data = await res.json();
 			if (data.error) {
-				alert(`Action failed: ${data.error}`);
+				if (!silent) alert(`Action failed: ${data.error}`);
+				else console.error(`Action failed for ${id}: ${data.error}`);
 			}
 			await fetchInstanceStatus(id);
 		} catch (e) {
-			alert(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+			if (!silent) alert(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+			else console.error(`Action failed for ${id}:`, e);
 			await fetchInstanceStatus(id);
 		}
 	}
 
-	async function deleteInstance(id: string) {
-		if (!confirm('Are you sure you want to delete this instance from Proxmox and our database?')) {
-			return;
-		}
+	function performAction(id: string, action: 'stop' | 'start' | 'shutdown') {
+		return doAction(id, action, false);
+	}
 
+	async function doDelete(id: string, silent = false) {
 		const inst = instances.find((i) => i.id === id);
 		if (inst) inst.status = 'loading';
 
@@ -72,15 +74,75 @@
 			});
 			const data = await res.json();
 			if (data.error) {
-				alert(`Delete failed: ${data.error}`);
+				if (!silent) alert(`Delete failed: ${data.error}`);
+				else console.error(`Delete failed for ${id}: ${data.error}`);
 				await fetchInstanceStatus(id);
 			} else {
 				instances = instances.filter((i) => i.id !== id);
 			}
 		} catch (e) {
-			alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+			if (!silent) alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+			else console.error(`Delete failed for ${id}:`, e);
 			await fetchInstanceStatus(id);
 		}
+	}
+
+	function deleteInstance(id: string) {
+		if (!confirm('Are you sure you want to delete this instance from Proxmox and our database?')) {
+			return;
+		}
+		return doDelete(id, false);
+	}
+
+	let selectedInstances: string[] = $state([]);
+	let isBatchActionRunning = $state(false);
+
+	let allSelected = $derived(instances.length > 0 && selectedInstances.length === instances.length);
+
+	function toggleSelectAll(e: Event) {
+		const target = e.target as HTMLInputElement;
+		if (target.checked) {
+			selectedInstances = instances.map((i) => i.id);
+		} else {
+			selectedInstances = [];
+		}
+	}
+
+	async function performBatchAction(action: 'stop' | 'start' | 'shutdown') {
+		if (!confirm(`Are you sure you want to ${action} ${selectedInstances.length} instances?`)) return;
+		isBatchActionRunning = true;
+		
+		const chunkSize = 5;
+		for (let i = 0; i < selectedInstances.length; i += chunkSize) {
+			const chunk = selectedInstances.slice(i, i + chunkSize);
+			await Promise.allSettled(chunk.map((id) => doAction(id, action, true)));
+		}
+		
+		isBatchActionRunning = false;
+	}
+
+	async function deleteBatchInstances() {
+		const toDelete = selectedInstances.filter((id) => {
+			const inst = instances.find((i) => i.id === id);
+			return inst && inst.status === 'stopped';
+		});
+
+		if (toDelete.length === 0) {
+			alert('No stopped instances selected. Only stopped instances can be deleted.');
+			return;
+		}
+
+		if (!confirm(`Are you sure you want to delete ${toDelete.length} stopped instances?`)) return;
+		isBatchActionRunning = true;
+
+		const chunkSize = 5;
+		for (let i = 0; i < toDelete.length; i += chunkSize) {
+			const chunk = toDelete.slice(i, i + chunkSize);
+			await Promise.allSettled(chunk.map((id) => doDelete(id, true)));
+		}
+
+		selectedInstances = selectedInstances.filter((id) => !toDelete.includes(id));
+		isBatchActionRunning = false;
 	}
 
 	onMount(() => {
@@ -271,17 +333,56 @@
 	{#if instances.length > 0}
 		<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 			<div
-				class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4"
+				class="flex flex-col gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4 md:flex-row md:items-center md:justify-between"
 			>
-				<h3 class="text-lg font-bold text-slate-800">
-					All Active Instances ({instances.length})
-				</h3>
-				<span class="text-xs text-slate-400">Updates every 10s</span>
+				<div>
+					<h3 class="text-lg font-bold text-slate-800">
+						All Active Instances ({instances.length})
+					</h3>
+					<span class="text-xs text-slate-400">Updates every 10s</span>
+				</div>
+                
+				{#if selectedInstances.length > 0}
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="mr-2 text-sm font-medium text-slate-600">
+							{selectedInstances.length} selected
+						</span>
+						<button
+							onclick={() => performBatchAction('start')}
+							disabled={isBatchActionRunning}
+							class="rounded bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:opacity-50"
+						>
+							Start
+						</button>
+						<button
+							onclick={() => performBatchAction('stop')}
+							disabled={isBatchActionRunning}
+							class="rounded bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-200 disabled:opacity-50"
+						>
+							Stop
+						</button>
+						<button
+							onclick={deleteBatchInstances}
+							disabled={isBatchActionRunning}
+							class="rounded bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-200 disabled:opacity-50"
+						>
+							Delete
+						</button>
+					</div>
+				{/if}
 			</div>
 			<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm whitespace-nowrap">
 					<thead class="bg-slate-50 text-xs text-slate-500 uppercase">
 						<tr>
+							<th class="px-6 py-3 w-4">
+								<input 
+									type="checkbox" 
+									checked={allSelected} 
+									onchange={toggleSelectAll}
+									class="h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+								/>
+							</th>
 							<th class="px-6 py-3 text-center">Status</th>
 							<th class="px-6 py-3">Access ID</th>
 							<th class="px-6 py-3">Target VMID</th>
@@ -294,6 +395,14 @@
 					<tbody class="divide-y divide-slate-200">
 						{#each instances as inst (inst.id)}
 							<tr class="transition-colors hover:bg-indigo-50/30">
+								<td class="px-6 py-4">
+									<input 
+										type="checkbox" 
+										value={inst.id} 
+										bind:group={selectedInstances}
+										class="h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+									/>
+								</td>
 								<td class="px-6 py-4 text-center">
 									{#if inst.status === 'running'}
 										<span
