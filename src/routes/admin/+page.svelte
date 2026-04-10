@@ -137,6 +137,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					template_vmid: template.vmid,
+					template_name: template.name,
 					template_node: template.node,
 					template_type: template.type,
 					count

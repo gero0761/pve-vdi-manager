@@ -1,5 +1,7 @@
 import { env } from '$env/dynamic/private';
-const { PVE_API_URL, PVE_TOKEN_ID, PVE_SECRET, PVE_PASSWORD } = env;
+const { PVE_API_URL, PVE_TOKEN_ID, PVE_SECRET, PVE_PASSWORD, PVE_START_ID } = env;
+
+const startID = PVE_START_ID ? parseInt(PVE_START_ID, 10) : 1000;
 
 export async function pveFetch(
 	endpoint: string,
@@ -46,10 +48,30 @@ export async function pveFetch(
 	return response;
 }
 
-export async function getNextVmid(): Promise<number> {
-	const res = await pveFetch('/cluster/nextid');
-	const json = await res.json();
-	return parseInt(json.data, 10);
+export async function getNextVmid(startId: number = startID): Promise<number> {
+	const baseRes = await pveFetch('/cluster/nextid');
+	const baseJson = await baseRes.json();
+	const proxmoxNextId = parseInt(baseJson.data, 10);
+
+	let currentId = Math.max(startId, proxmoxNextId);
+
+	for (let attempt = 0; attempt < 1000; attempt++) {
+		try {
+			const res = await pveFetch(`/cluster/nextid?vmid=${currentId}`);
+
+			const json = await res.json();
+			return parseInt(json.data, 10);
+		} catch (error: any) {
+			// Proxmox returns 400 if the ID already exists
+			if (error.message && (error.message.includes('400') || error.message.includes('exists'))) {
+				currentId++;
+			} else {
+				throw error;
+			}
+		}
+	}
+
+	throw new Error(`Failed to find a free VMID after 1000 attempts.`);
 }
 
 export async function getAccessTicket() {

@@ -2,13 +2,14 @@ import { json } from '@sveltejs/kit';
 import { pveFetch, getNextVmid } from '$lib/server/pve';
 import { db } from '$lib/server/db';
 import crypto from 'crypto';
+import { env } from '$env/dynamic/private';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function POST({ request }) {
 	try {
 		const body = await request.json();
-		const { template_vmid, template_node, template_type, count } = body;
+		const { template_vmid, template_node, template_type, count, template_name } = body;
 
 		if (!template_vmid || !template_node || !template_type || !count) {
 			return json({ error: 'Missing required parameters' }, { status: 400 });
@@ -23,15 +24,38 @@ export async function POST({ request }) {
 			let generatedId = '';
 			let upid = '';
 
+			// Guarantee unique generatedId
+			let idExists = true;
+			while (idExists) {
+				generatedId = crypto.randomBytes(4).toString('hex');
+				const existing = await db.getInstanceById(generatedId);
+				if (!existing) {
+					idExists = false;
+				}
+			}
+
+			// Define the proxmox display name or hostname
+			const targetName = template_name ? `${template_name}-${generatedId}` : generatedId;
+
 			// Retry loop for disk lock problem
 			for (let attempt = 0; attempt < 5; attempt++) {
 				newid = await getNextVmid();
-				generatedId = crypto.randomBytes(4).toString('hex');
 
 				const searchParams = new URLSearchParams({
 					newid: newid.toString(),
 					full: '0'
 				});
+
+				if (template_type === 'qemu') {
+					searchParams.append('name', targetName);
+				} else if (template_type === 'lxc') {
+					searchParams.append('hostname', targetName);
+				}
+
+				if (env.PVE_POOL) {
+					//console.log('Adding pool to clone parameters:', env.PVE_POOL);
+					searchParams.append('pool', env.PVE_POOL);
+				}
 
 				const res = await pveFetch(
 					`/nodes/${template_node}/${template_type}/${template_vmid}/clone?${searchParams.toString()}`,
