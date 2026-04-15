@@ -1,0 +1,119 @@
+<script lang="ts">
+	import { enhance } from '$app/forms';
+	import { page } from '$app/stores';
+	let loading = false;
+	export let form;
+	
+	const registeredMsg = $page.url.searchParams.get('registered') === 'true';
+</script>
+
+<div class="flex min-h-screen items-center justify-center bg-gray-900 px-4 py-12 sm:px-6 lg:px-8">
+	<div class="w-full max-w-md space-y-8 rounded-xl bg-gray-800 p-8 shadow-2xl">
+		<div>
+			<h2 class="mt-2 text-center text-3xl font-extrabold tracking-tight text-white">
+				Willkommen zurück
+			</h2>
+			<p class="mt-2 text-center text-sm text-gray-400">
+				Oder
+				<a href="/register" class="font-medium text-indigo-500 hover:text-indigo-400 transition-colors">
+					hier einen neuen Account erstellen
+				</a>
+			</p>
+		</div>
+		
+		{#if registeredMsg && !form?.error}
+			<div class="rounded-md bg-green-500/10 p-4 border border-green-500/50">
+				<div class="flex">
+					<div class="ml-3">
+						<p class="text-sm font-medium text-green-400">Registrierung erfolgreich! Du kannst dich nun einloggen.</p>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		{#if form?.error}
+			<div class="rounded-md bg-red-500/10 p-4 border border-red-500/50">
+				<div class="flex">
+					<div class="ml-3">
+						<h3 class="text-sm font-medium text-red-400">Ein Fehler ist aufgetreten</h3>
+						<div class="mt-2 text-sm text-red-300">
+							<p>{form.error}</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<form
+			method="POST"
+			use:enhance={() => {
+				loading = true;
+				return async ({ update }) => {
+					await update();
+					loading = false;
+				};
+			}}
+			class="mt-8 space-y-6"
+		>
+			<div class="-space-y-px rounded-md shadow-sm">
+				<div>
+					<label for="username" class="sr-only">Benutzername</label>
+					<input
+						id="username"
+						name="username"
+						type="text"
+						required
+						value={form?.username ?? ''}
+						class="relative block w-full rounded-t-md border-0 bg-gray-700 py-2.5 px-3 text-white ring-1 ring-inset ring-gray-600 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6"
+						placeholder="Benutzername"
+					/>
+				</div>
+				<div>
+					<label for="password" class="sr-only">Passwort</label>
+					<input
+						id="password"
+						name="password"
+						type="password"
+						required
+						class="relative block w-full rounded-b-md border-0 bg-gray-700 py-2.5 px-3 text-white ring-1 ring-inset ring-gray-600 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6"
+						placeholder="Passwort"
+					/>
+				</div>
+			</div>
+
+			<div>
+				<button
+					type="submit"
+					disabled={loading}
+					class="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+				>
+					{#if loading}
+						<svg
+							class="mr-3 -ml-1 h-5 w-5 animate-spin text-white"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle
+								class="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								stroke-width="4"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+						Wird eingeloggt...
+					{:else}
+						Einloggen
+					{/if}
+				</button>
+			</div>
+		</form>
+	</div>
+</div>

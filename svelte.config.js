@@ -15,7 +15,10 @@ const config = {
 				protocol_header: 'x-forwarded-proto',
 				host_header: 'x-forwarded-host'
 			}
-		})
+		}),
+		alias: {
+			$db: './lib/server/db'
+		}
 	},
 	vitePlugin: {
 		dynamicCompileOptions: ({ filename }) =>

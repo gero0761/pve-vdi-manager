@@ -420,7 +420,7 @@
 									{/if}
 								</td>
 								<td class="px-6 py-4 font-mono font-medium text-indigo-600">
-									<a href="/?id={inst.id}" target="_blank" class="hover:underline">{inst.id}</a>
+									<a href="/console/?id={inst.id}" target="_blank" class="hover:underline">{inst.id}</a>
 								</td>
 								<td class="px-6 py-4 text-slate-600">{inst.vmid}</td>
 								<td class="px-6 py-4">

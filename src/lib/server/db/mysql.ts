@@ -43,6 +43,24 @@ if (DB_TYPE === 'mysql') {
 					created_at BIGINT NOT NULL
 				)
 			`);
+			await connection.query(`
+				CREATE TABLE IF NOT EXISTS users (
+					id VARCHAR(255) PRIMARY KEY,
+					username VARCHAR(255) UNIQUE NOT NULL,
+					password_hash VARCHAR(255) NOT NULL,
+					first_name VARCHAR(255) NOT NULL,
+					last_name VARCHAR(255) NOT NULL
+				)
+			`);
+			await connection.query(`
+				CREATE TABLE IF NOT EXISTS sessions (
+					id VARCHAR(255) PRIMARY KEY,
+					user_id VARCHAR(255) NOT NULL,
+					created_at BIGINT NOT NULL,
+					expires_at BIGINT NOT NULL,
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				)
+			`);
 			connection.release();
 			console.log('MySQL schema initialized');
 		} catch (err) {
@@ -69,5 +87,39 @@ export const mysqlAdapter: DatabaseAdapter = {
 	async getAllInstances(): Promise<VDIInstance[]> {
 		const [rows] = await pool.query('SELECT * FROM instances ORDER BY created_at DESC');
 		return rows as VDIInstance[];
+	},
+	
+	// User Management
+	async getUserByUsername(username: string): Promise<import('./types').User | undefined> {
+		const [rows] = await pool.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
+		const results = rows as import('./types').User[];
+		return results.length > 0 ? results[0] : undefined;
+	},
+	async getUserById(id: string): Promise<import('./types').User | undefined> {
+		const [rows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+		const results = rows as import('./types').User[];
+		return results.length > 0 ? results[0] : undefined;
+	},
+	async createUser(user: import('./types').User): Promise<void> {
+		await pool.query(
+			'INSERT INTO users (id, username, password_hash, first_name, last_name) VALUES (?, ?, ?, ?, ?)',
+			[user.id, user.username, user.password_hash, user.first_name, user.last_name]
+		);
+	},
+	
+	// Session Management
+	async createSession(session: import('./types').Session): Promise<void> {
+		await pool.query(
+			'INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
+			[session.id, session.user_id, session.created_at, session.expires_at]
+		);
+	},
+	async getSessionById(id: string): Promise<import('./types').Session | undefined> {
+		const [rows] = await pool.query('SELECT * FROM sessions WHERE id = ? LIMIT 1', [id]);
+		const results = rows as import('./types').Session[];
+		return results.length > 0 ? results[0] : undefined;
+	},
+	async deleteSession(id: string): Promise<void> {
+		await pool.query('DELETE FROM sessions WHERE id = ?', [id]);
 	}
 };
