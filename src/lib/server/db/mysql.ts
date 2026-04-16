@@ -40,7 +40,7 @@ if (DB_TYPE === 'mysql') {
 					vmid INT NOT NULL,
 					type VARCHAR(50) NOT NULL,
 					node VARCHAR(255) NOT NULL,
-					created_at BIGINT NOT NULL
+					created_at DATETIME NOT NULL
 				)
 			`);
 			await connection.query(`
@@ -49,18 +49,33 @@ if (DB_TYPE === 'mysql') {
 					username VARCHAR(255) UNIQUE NOT NULL,
 					password_hash VARCHAR(255) NOT NULL,
 					first_name VARCHAR(255) NOT NULL,
-					last_name VARCHAR(255) NOT NULL
+					last_name VARCHAR(255) NOT NULL,
+					role VARCHAR(50) DEFAULT 'user' NOT NULL
 				)
 			`);
 			await connection.query(`
 				CREATE TABLE IF NOT EXISTS sessions (
 					id VARCHAR(255) PRIMARY KEY,
 					user_id VARCHAR(255) NOT NULL,
-					created_at BIGINT NOT NULL,
-					expires_at BIGINT NOT NULL,
+					created_at DATETIME NOT NULL,
+					expires_at DATETIME NOT NULL,
 					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 				)
 			`);
+			await connection.query(`
+				CREATE TABLE IF NOT EXISTS user_instances (
+					user_id VARCHAR(255) NOT NULL,
+					instance_id VARCHAR(255) NOT NULL,
+					PRIMARY KEY (user_id, instance_id),
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+					FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+				)
+			`);
+			// Try to alter users to add role if we skipped recreation
+			try {
+				await connection.query("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user' NOT NULL");
+			} catch (e) { /* Ignore if it already exists */ }
+
 			connection.release();
 			console.log('MySQL schema initialized');
 		} catch (err) {
@@ -102,8 +117,8 @@ export const mysqlAdapter: DatabaseAdapter = {
 	},
 	async createUser(user: import('./types').User): Promise<void> {
 		await pool.query(
-			'INSERT INTO users (id, username, password_hash, first_name, last_name) VALUES (?, ?, ?, ?, ?)',
-			[user.id, user.username, user.password_hash, user.first_name, user.last_name]
+			'INSERT INTO users (id, username, password_hash, first_name, last_name, role) VALUES (?, ?, ?, ?, ?, ?)',
+			[user.id, user.username, user.password_hash, user.first_name, user.last_name, user.role || 'user']
 		);
 	},
 	
@@ -121,5 +136,21 @@ export const mysqlAdapter: DatabaseAdapter = {
 	},
 	async deleteSession(id: string): Promise<void> {
 		await pool.query('DELETE FROM sessions WHERE id = ?', [id]);
+	},
+	
+	// Access Management
+	async assignInstanceToUser(userId: string, instanceId: string): Promise<void> {
+		await pool.query('INSERT IGNORE INTO user_instances (user_id, instance_id) VALUES (?, ?)', [userId, instanceId]);
+	},
+	async removeInstanceFromUser(userId: string, instanceId: string): Promise<void> {
+		await pool.query('DELETE FROM user_instances WHERE user_id = ? AND instance_id = ?', [userId, instanceId]);
+	},
+	async getUserInstances(userId: string): Promise<VDIInstance[]> {
+		const [rows] = await pool.query(`
+			SELECT i.* FROM instances i
+			JOIN user_instances ui ON i.id = ui.instance_id
+			WHERE ui.user_id = ?
+		`, [userId]);
+		return rows as VDIInstance[];
 	}
 };

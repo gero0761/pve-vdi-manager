@@ -106,7 +106,7 @@ export async function POST({ request }) {
 				vmid: newid,
 				type: template_type as 'qemu' | 'lxc',
 				node: template_node,
-				created_at: Date.now()
+				created_at: new Date()
 			};
 
 			await db.createInstance(instance);

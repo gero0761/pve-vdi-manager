@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { db } from '$db';
+import { db } from '$lib/server/db';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -44,7 +44,8 @@ export const actions: Actions = {
 			username,
 			password_hash: passwordHash,
 			first_name: firstName,
-			last_name: lastName
+			last_name: lastName,
+			role: 'user' as const
 		};
 
 		await db.createUser(newUser);

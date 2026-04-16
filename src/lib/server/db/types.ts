@@ -3,7 +3,7 @@ export interface VDIInstance {
 	vmid: number; // Proxmox ID
 	type: 'qemu' | 'lxc';
 	node: string;
-	created_at: number;
+	created_at: Date;
 }
 
 export interface User {
@@ -12,13 +12,19 @@ export interface User {
 	password_hash: string;
 	first_name: string;
 	last_name: string;
+	role?: 'admin' | 'user';
 }
 
 export interface Session {
 	id: string;
 	user_id: string;
-	created_at: number;
-	expires_at: number;
+	created_at: Date;
+	expires_at: Date;
+}
+
+export interface UserInstanceAccess {
+	user_id: string;
+	instance_id: string;
 }
 
 export interface DatabaseAdapter {
@@ -36,4 +42,9 @@ export interface DatabaseAdapter {
 	createSession(session: Session): Promise<void>;
 	getSessionById(id: string): Promise<Session | undefined>;
 	deleteSession(id: string): Promise<void>;
+
+	// Access Management
+	assignInstanceToUser(userId: string, instanceId: string): Promise<void>;
+	removeInstanceFromUser(userId: string, instanceId: string): Promise<void>;
+	getUserInstances(userId: string): Promise<VDIInstance[]>;
 }

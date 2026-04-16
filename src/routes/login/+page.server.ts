@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { db } from '$db';
+import { db } from '$lib/server/db';
 import { scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -45,12 +45,12 @@ export const actions: Actions = {
 		// Create Session
 		const sessionId = crypto.randomUUID();
 		const ONE_DAY = 1000 * 60 * 60 * 24;
-		const expiresAt = Date.now() + ONE_DAY;
+		const expiresAt = new Date(Date.now() + ONE_DAY);
 
 		await db.createSession({
 			id: sessionId,
 			user_id: user.id,
-			created_at: Date.now(),
+			created_at: new Date(),
 			expires_at: expiresAt
 		});
 

@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { db } from '$db';
+import { db } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ cookies }) => {

@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { page } from '$app/stores';
 	let loading = false;
-	export let form;
+	let form = $props();
 	
 	const registeredMsg = $page.url.searchParams.get('registered') === 'true';
 </script>
@@ -11,12 +11,12 @@
 	<div class="w-full max-w-md space-y-8 rounded-xl bg-gray-800 p-8 shadow-2xl">
 		<div>
 			<h2 class="mt-2 text-center text-3xl font-extrabold tracking-tight text-white">
-				Willkommen zurück
+				Welcome back
 			</h2>
 			<p class="mt-2 text-center text-sm text-gray-400">
-				Oder
+				Or
 				<a href="/register" class="font-medium text-indigo-500 hover:text-indigo-400 transition-colors">
-					hier einen neuen Account erstellen
+					create a new account here
 				</a>
 			</p>
 		</div>
@@ -25,7 +25,7 @@
 			<div class="rounded-md bg-green-500/10 p-4 border border-green-500/50">
 				<div class="flex">
 					<div class="ml-3">
-						<p class="text-sm font-medium text-green-400">Registrierung erfolgreich! Du kannst dich nun einloggen.</p>
+						<p class="text-sm font-medium text-green-400">Registration successful! You can now log in.</p>
 					</div>
 				</div>
 			</div>
@@ -35,7 +35,7 @@
 			<div class="rounded-md bg-red-500/10 p-4 border border-red-500/50">
 				<div class="flex">
 					<div class="ml-3">
-						<h3 class="text-sm font-medium text-red-400">Ein Fehler ist aufgetreten</h3>
+						<h3 class="text-sm font-medium text-red-400">An error occurred:</h3>
 						<div class="mt-2 text-sm text-red-300">
 							<p>{form.error}</p>
 						</div>
@@ -57,7 +57,7 @@
 		>
 			<div class="-space-y-px rounded-md shadow-sm">
 				<div>
-					<label for="username" class="sr-only">Benutzername</label>
+					<label for="username" class="sr-only">Username</label>
 					<input
 						id="username"
 						name="username"
@@ -65,18 +65,18 @@
 						required
 						value={form?.username ?? ''}
 						class="relative block w-full rounded-t-md border-0 bg-gray-700 py-2.5 px-3 text-white ring-1 ring-inset ring-gray-600 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6"
-						placeholder="Benutzername"
+						placeholder="Username"
 					/>
 				</div>
 				<div>
-					<label for="password" class="sr-only">Passwort</label>
+					<label for="password" class="sr-only">Password</label>
 					<input
 						id="password"
 						name="password"
 						type="password"
 						required
 						class="relative block w-full rounded-b-md border-0 bg-gray-700 py-2.5 px-3 text-white ring-1 ring-inset ring-gray-600 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6"
-						placeholder="Passwort"
+						placeholder="Password"
 					/>
 				</div>
 			</div>
@@ -108,9 +108,9 @@
 								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 							></path>
 						</svg>
-						Wird eingeloggt...
+						Logging in...
 					{:else}
-						Einloggen
+						Login
 					{/if}
 				</button>
 			</div>

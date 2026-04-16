@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	let { data } = $props();
 
 	type Template = { vmid: number; name: string; node: string; type: 'qemu' | 'lxc' };
 	type Instance = {
@@ -233,7 +234,7 @@
 		<div
 			class="rounded border bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 shadow-inner"
 		>
-			SuperAdmin
+			{data.user?.username}
 		</div>
 	</div>
 
