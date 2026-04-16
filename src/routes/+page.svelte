@@ -27,7 +27,7 @@
 					<span class="hidden text-sm text-gray-400 sm:block">
 						Logged in as <span class="font-medium text-white">{data.user.username}</span>
 					</span>
-					<form action="/logout" method="POST">
+					<form action="/logout">
 						<button
 							type="submit"
 							class="rounded-lg border border-red-500/50 px-4 py-2 text-sm font-medium text-red-400 transition-all hover:bg-red-500 hover:text-white"

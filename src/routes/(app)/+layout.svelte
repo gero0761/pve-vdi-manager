@@ -47,7 +47,7 @@
 					</div>
 				</div>
 
-				<form action="/logout" method="POST">
+				<form action="/logout">
 					<button
 						type="submit"
 						class="group flex items-center gap-2 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-500 hover:text-white active:scale-95"
