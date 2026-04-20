@@ -2,8 +2,13 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { pveFetch, getAccessTicket } from '$lib/server/pve';
 import { db } from '$lib/server/db';
 
-export const POST: RequestHandler = async ({ params, request }) => {
+export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const { id } = params;
+	const user = locals.user;
+
+	if (!user) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
 
 	if (!id) {
 		return json({ error: 'Missing ID parameter' }, { status: 400 });
@@ -12,6 +17,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const instance = await db.getInstanceById(id);
 	if (!instance) {
 		return json({ error: 'Provided ID is invalid or instance does not exist' }, { status: 404 });
+	}
+
+	// Access Check
+	if (user.role !== 'admin') {
+		const hasAccess = await db.hasInstanceAccess(user.id, instance.id);
+		if (!hasAccess) {
+			return json({ error: 'Forbidden: You do not have access to this instance' }, { status: 403 });
+		}
 	}
 
 	const { vmid, node, type } = instance;
