@@ -121,6 +121,22 @@ export const mysqlAdapter: DatabaseAdapter = {
 			[user.id, user.username, user.password_hash, user.first_name, user.last_name, user.role || 'user']
 		);
 	},
+	async getAllUsers(): Promise<import('./types').User[]> {
+		const [rows] = await pool.query('SELECT * FROM users ORDER BY username ASC');
+		return rows as import('./types').User[];
+	},
+	async deleteUser(id: string): Promise<void> {
+		await pool.query('DELETE FROM users WHERE id = ?', [id]);
+	},
+	async updateUser(id: string, user: Partial<import('./types').User>): Promise<void> {
+		const fields = Object.keys(user).filter(k => k !== 'id');
+		if (fields.length === 0) return;
+		
+		const sets = fields.map(f => `${f} = ?`).join(', ');
+		const values = fields.map(f => (user as any)[f]);
+		
+		await pool.query(`UPDATE users SET ${sets} WHERE id = ?`, [...values, id]);
+	},
 	
 	// Session Management
 	async createSession(session: import('./types').Session): Promise<void> {
@@ -152,5 +168,9 @@ export const mysqlAdapter: DatabaseAdapter = {
 			WHERE ui.user_id = ?
 		`, [userId]);
 		return rows as VDIInstance[];
+	},
+	async hasInstanceAccess(userId: string, instanceId: string): Promise<boolean> {
+		const [rows] = await pool.query('SELECT 1 FROM user_instances WHERE user_id = ? AND instance_id = ? LIMIT 1', [userId, instanceId]);
+		return (rows as any[]).length > 0;
 	}
 };

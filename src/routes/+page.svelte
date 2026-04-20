@@ -23,9 +23,9 @@
 
 			<!-- Navigation Grid -->
 			<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-				<!-- Admin Card -->
+				<!-- Dashboard Card -->
 				<a
-					href="/admin"
+					href="/dashboard"
 					class="group flex flex-col space-y-4 rounded-2xl bg-gray-800 p-8 shadow-2xl transition-all hover:bg-gray-750 border border-gray-700 hover:border-indigo-500"
 					data-sveltekit-reload
 				>
@@ -47,9 +47,9 @@
 							/>
 						</svg>
 					</div>
-					<h3 class="text-2xl font-bold text-white">Admin Dashboard</h3>
+					<h3 class="text-2xl font-bold text-white">VDI Dashboard</h3>
 					<p class="text-gray-400">
-						Deploy new clones, manage VM status, and monitor your entire cluster from a single view.
+						Manage your VDI instances, monitor VM status, and access your desktops from a single view.
 					</p>
 				</a>
 

@@ -79,6 +79,24 @@ export const sqliteAdapter: DatabaseAdapter = {
 		);
 		stmt.run(user.id, user.username, user.password_hash, user.first_name, user.last_name, user.role || 'user');
 	},
+	async getAllUsers(): Promise<import('./types').User[]> {
+		const stmt = db.prepare('SELECT * FROM users ORDER BY username ASC');
+		return stmt.all() as import('./types').User[];
+	},
+	async deleteUser(id: string): Promise<void> {
+		const stmt = db.prepare('DELETE FROM users WHERE id = ?');
+		stmt.run(id);
+	},
+	async updateUser(id: string, user: Partial<import('./types').User>): Promise<void> {
+		const fields = Object.keys(user).filter(k => k !== 'id');
+		if (fields.length === 0) return;
+		
+		const sets = fields.map(f => `${f} = ?`).join(', ');
+		const values = fields.map(f => (user as any)[f]);
+		
+		const stmt = db.prepare(`UPDATE users SET ${sets} WHERE id = ?`);
+		stmt.run(...values, id);
+	},
 	
 	// Session Management
 	async createSession(session: import('./types').Session): Promise<void> {
@@ -112,5 +130,9 @@ export const sqliteAdapter: DatabaseAdapter = {
 			WHERE ui.user_id = ?
 		`);
 		return stmt.all(userId) as VDIInstance[];
+	},
+	async hasInstanceAccess(userId: string, instanceId: string): Promise<boolean> {
+		const stmt = db.prepare('SELECT 1 FROM user_instances WHERE user_id = ? AND instance_id = ?');
+		return stmt.get(userId, instanceId) !== undefined;
 	}
 };

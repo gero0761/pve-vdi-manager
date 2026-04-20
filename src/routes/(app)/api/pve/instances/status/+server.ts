@@ -3,9 +3,20 @@ import { pveFetch } from '$lib/server/pve';
 import { db } from '$lib/server/db';
 import { env } from '$env/dynamic/private';
 
-export async function GET() {
+export async function GET({ locals }) {
 	try {
-		const managedInstances = await db.getAllInstances();
+		const user = locals.user;
+		if (!user) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		let managedInstances;
+		if (user.role === 'admin') {
+			managedInstances = await db.getAllInstances();
+		} else {
+			managedInstances = await db.getUserInstances(user.id);
+		}
+
 		if (managedInstances.length === 0) {
 			return json({ statuses: {} });
 		}

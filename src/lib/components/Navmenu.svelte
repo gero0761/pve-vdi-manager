@@ -33,13 +33,23 @@
         <!-- Desktop Nav -->
         <nav class="hidden space-x-2 md:flex">
             <a
-                href="/admin"
-                class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname === '/admin'
+                href="/dashboard"
+                class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname === '/dashboard'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
                     : 'text-gray-400 hover:bg-gray-800 hover:text-white'}"
             >
-                Admin
+                Dashboard
             </a>
+            {#if user && user.role === 'admin'}
+            <a
+                href="/mgmt/users"
+                class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname.startsWith('/mgmt/users')
+                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'}"
+            >
+                Users
+            </a>
+            {/if}
             <a
                 href="/console"
                 class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname === '/console'
@@ -52,11 +62,19 @@
         <!-- Mobile Nav -->
         <nav class="flex w-full justify-around border-b border-gray-800 bg-gray-900 py-3 md:hidden">
             <a
-                href="/admin"
-                class="text-xs font-bold uppercase tracking-widest {pathname === '/admin'
+                href="/dashboard"
+                class="text-xs font-bold uppercase tracking-widest {pathname === '/dashboard'
                     ? 'text-indigo-500'
-                    : 'text-gray-500'}">Admin</a
+                    : 'text-gray-500'}">Dashboard</a
             >
+            {#if user && user.role === 'admin'}
+            <a
+                href="/mgmt/users"
+                class="text-xs font-bold uppercase tracking-widest {pathname.startsWith('/mgmt/users')
+                    ? 'text-rose-500'
+                    : 'text-gray-500'}">Users</a
+            >
+            {/if}
             <a
                 href="/console"
                 class="text-xs font-bold uppercase tracking-widest {pathname === '/console'

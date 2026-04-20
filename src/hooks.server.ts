@@ -37,6 +37,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (!isPublicRoute && !event.locals.user) {
 		throw redirect(303, handleLoginRedirect(event));
 	}
+	
+	// Admin-only routes
+	const isAdminRoute = 
+		event.url.pathname.startsWith('/mgmt') || 
+		event.url.pathname.startsWith('/api/pve/clone') || 
+		event.url.pathname.startsWith('/api/pve/templates');
+	
+	if (isAdminRoute && event.locals.user?.role !== 'admin') {
+		throw redirect(303, '/');
+	}
 
 	const response = await resolve(event);
 

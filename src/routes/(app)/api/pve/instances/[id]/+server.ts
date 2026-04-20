@@ -3,12 +3,20 @@ import { db } from '$lib/server/db';
 import { pveFetch } from '$lib/server/pve';
 
 // GET /api/pve/instances/[id] -> Get current status and IP from Proxmox
-export async function GET({ params }) {
+export async function GET({ params, locals }) {
 	const { id } = params;
-	const instance = await db.getInstanceById(id);
+	const user = locals.user;
+	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
+	const instance = await db.getInstanceById(id);
 	if (!instance) {
 		return json({ error: 'Instance not found' }, { status: 404 });
+	}
+
+	// Access Check
+	if (user.role !== 'admin') {
+		const hasAccess = await db.hasInstanceAccess(user.id, instance.id);
+		if (!hasAccess) return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
 	try {
@@ -66,13 +74,22 @@ export async function GET({ params }) {
 }
 
 // POST /api/pve/instances/[id] -> Action (stop, start, etc.)
-export async function POST({ params, request }) {
+export async function POST({ params, request, locals }) {
 	const { id } = params;
+	const user = locals.user;
+	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
+
 	const { action } = await request.json();
 	const instance = await db.getInstanceById(id);
 
 	if (!instance) {
 		return json({ error: 'Instance not found' }, { status: 404 });
+	}
+
+	// Access Check
+	if (user.role !== 'admin') {
+		const hasAccess = await db.hasInstanceAccess(user.id, instance.id);
+		if (!hasAccess) return json({ error: 'Forbidden' }, { status: 403 });
 	}
 
 	if (!['stop', 'start', 'shutdown'].includes(action)) {
@@ -91,8 +108,16 @@ export async function POST({ params, request }) {
 }
 
 // DELETE /api/pve/instances/[id] -> Delete from Proxmox and DB
-export async function DELETE({ params }) {
+export async function DELETE({ params, locals }) {
 	const { id } = params;
+	const user = locals.user;
+	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
+	
+	// Delete is ADMIN ONLY
+	if (user.role !== 'admin') {
+		return json({ error: 'Forbidden' }, { status: 403 });
+	}
+
 	const instance = await db.getInstanceById(id);
 
 	if (!instance) {

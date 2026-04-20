@@ -37,6 +37,9 @@ export interface DatabaseAdapter {
 	getUserByUsername(username: string): Promise<User | undefined>;
 	getUserById(id: string): Promise<User | undefined>;
 	createUser(user: User): Promise<void>;
+	getAllUsers(): Promise<User[]>;
+	deleteUser(id: string): Promise<void>;
+	updateUser(id: string, user: Partial<User>): Promise<void>;
 	
 	// Session Management
 	createSession(session: Session): Promise<void>;
@@ -47,4 +50,5 @@ export interface DatabaseAdapter {
 	assignInstanceToUser(userId: string, instanceId: string): Promise<void>;
 	removeInstanceFromUser(userId: string, instanceId: string): Promise<void>;
 	getUserInstances(userId: string): Promise<VDIInstance[]>;
+	hasInstanceAccess(userId: string, instanceId: string): Promise<boolean>;
 }
