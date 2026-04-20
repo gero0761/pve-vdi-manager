@@ -25,16 +25,67 @@
 	let instances: Instance[] = $state([]);
 
 	async function fetchInstanceStatus(id: string) {
+		const inst = instances.find((i) => i.id === id);
+		// Don't fetch if already fetching or if inst doesn't exist
+		if (!inst) return;
+
 		try {
 			const res = await fetch(`/api/pve/instances/${id}`);
 			const data = await res.json();
-			const inst = instances.find((i) => i.id === id);
 			if (inst) {
 				inst.status = data.status || 'unknown';
 				inst.ip = data.ip || null;
 			}
 		} catch (e) {
 			console.error(`Failed to fetch status for ${id}:`, e);
+		}
+	}
+
+	let statusQueue: string[] = [];
+	let activeFetches = 0;
+	const MAX_CONCURRENT = 3;
+
+	async function processQueue() {
+		if (activeFetches >= MAX_CONCURRENT || statusQueue.length === 0) return;
+
+		const id = statusQueue.shift();
+		if (!id) return;
+
+		activeFetches++;
+		try {
+			await fetchInstanceStatus(id);
+		} finally {
+			activeFetches--;
+			// Process next in queue
+			setTimeout(processQueue, 100); 
+		}
+	}
+
+	function enqueueStatusFetch(id: string) {
+		if (!statusQueue.includes(id)) {
+			statusQueue.push(id);
+			processQueue();
+		}
+	}
+
+	async function fetchBulkStatus() {
+		try {
+			const res = await fetch('/api/pve/instances/status');
+			const data = await res.json();
+			if (data.statuses) {
+				for (const id in data.statuses) {
+					const inst = instances.find((i) => i.id === id);
+					if (inst) {
+						inst.status = data.statuses[id].status || 'unknown';
+						// If running but no IP, enqueue a detailed fetch
+						if (inst.status === 'running' && !inst.ip) {
+							enqueueStatusFetch(inst.id);
+						}
+					}
+				}
+			}
+		} catch (e) {
+			console.error('Failed to fetch bulk status:', e);
 		}
 	}
 
@@ -169,8 +220,8 @@
 				const data = await res.json();
 				if (!data.error) {
 					instances = (data.instances || []).map((i: Instance) => ({ ...i, status: 'loading' }));
-					// Fetch initial status for all
-					instances.forEach((inst) => fetchInstanceStatus(inst.id));
+					// Fetch initial status via bulk
+					fetchBulkStatus();
 				}
 			} catch (e) {
 				console.error('Failed to fetch instances:', e);
@@ -181,7 +232,7 @@
 
 		// Polling for status
 		const interval = setInterval(() => {
-			instances.forEach((inst) => fetchInstanceStatus(inst.id));
+			fetchBulkStatus();
 		}, 10000);
 
 		return () => clearInterval(interval);
@@ -216,7 +267,7 @@
 					status: 'loading' as const
 				}));
 				instances = [...newClones, ...instances];
-				newClones.forEach((c) => fetchInstanceStatus(c.id));
+				newClones.forEach((c) => enqueueStatusFetch(c.id));
 			}
 		} catch (e) {
 			cloneError = e instanceof Error ? e.message : String(e);

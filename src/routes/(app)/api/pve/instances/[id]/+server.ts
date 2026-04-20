@@ -37,8 +37,12 @@ export async function GET({ params }) {
 						`/nodes/${instance.node}/qemu/${instance.vmid}/agent/network-get-interfaces`
 					);
 					const agentData = await agentRes.json();
-					if (agentData.data && Array.isArray(agentData.data)) {
-						for (const iface of agentData.data) {
+					
+					// Proxmox agent calls usually return data in .data.result
+					const interfaces = agentData.data?.result || agentData.data;
+					
+					if (interfaces && Array.isArray(interfaces)) {
+						for (const iface of interfaces) {
 							if (iface.name === 'lo') continue;
 							const addr = iface['ip-addresses']?.find((a: any) => a['ip-address-type'] === 'ipv4');
 							if (addr && !addr['ip-address'].startsWith('127.')) {
