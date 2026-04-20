@@ -1,57 +1,11 @@
 <script lang="ts">
+	import Navmenu from '$lib/components/Navmenu.svelte';
 	let { data } = $props();
 </script>
 
 <div class="flex min-h-screen flex-col bg-gray-900 text-white">
 	<!-- Top Navigation Header -->
-	<header class="flex w-full items-center justify-between px-6 py-6 lg:px-12">
-		<!-- GitHub Link (Left) -->
-		<a
-			href="https://github.com/gero0761/pve-vdi-manager"
-			target="_blank"
-			class="flex items-center gap-2 text-gray-400 transition-colors hover:text-white"
-			title="View on GitHub"
-		>
-			<svg class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
-				<path
-					d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.11.81 2.235 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
-				/>
-			</svg>
-			<span class="hidden font-medium sm:block">GitHub</span>
-		</a>
-
-		<!-- Auth Links (Right) -->
-		<div class="flex items-center space-x-6">
-			{#if data.user}
-				<div class="flex items-center space-x-4">
-					<span class="hidden text-sm text-gray-400 sm:block">
-						Logged in as <span class="font-medium text-white">{data.user.username}</span>
-					</span>
-					<form action="/logout">
-						<button
-							type="submit"
-							class="rounded-lg border border-red-500/50 px-4 py-2 text-sm font-medium text-red-400 transition-all hover:bg-red-500 hover:text-white"
-						>
-							Logout
-						</button>
-					</form>
-				</div>
-			{:else}
-				<div class="flex items-center space-x-4 sm:space-x-8">
-					<a
-						href="/register"
-						class="text-sm font-medium text-gray-400 transition-colors hover:text-white"
-						>Register</a
-					>
-					<a
-						href="/login"
-						class="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white transition-all hover:bg-indigo-500 shadow-lg shadow-indigo-600/20"
-						>Login</a
-					>
-				</div>
-			{/if}
-		</div>
-	</header>
+	<Navmenu user={data.user} variant="landing" />
 
 	<!-- Main Content Section -->
 	<main class="flex flex-1 flex-col items-center justify-center px-4 pb-12">
@@ -73,6 +27,7 @@
 				<a
 					href="/admin"
 					class="group flex flex-col space-y-4 rounded-2xl bg-gray-800 p-8 shadow-2xl transition-all hover:bg-gray-750 border border-gray-700 hover:border-indigo-500"
+					data-sveltekit-reload
 				>
 					<div
 						class="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-600 group-hover:bg-indigo-500 transition-colors"
@@ -102,6 +57,7 @@
 				<a
 					href="/console"
 					class="group flex flex-col space-y-4 rounded-2xl bg-gray-800 p-8 shadow-2xl transition-all hover:bg-gray-750 border border-gray-700 hover:border-indigo-500"
+					data-sveltekit-reload
 				>
 					<div
 						class="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-600 group-hover:bg-emerald-500 transition-colors"

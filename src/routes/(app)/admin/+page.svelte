@@ -461,7 +461,7 @@
 									{:else if inst.status === 'running'}
 										<span class="flex items-center gap-2 text-xs font-medium text-gray-500 italic">
 											<div class="h-1 w-1 bg-gray-600 rounded-full animate-bounce"></div>
-											Searching IP...
+											Fetching IP...
 										</span>
 									{:else}
 										<span class="text-xs text-gray-600">—</span>
