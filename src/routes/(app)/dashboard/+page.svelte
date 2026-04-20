@@ -477,7 +477,7 @@
 					</thead>
 					<tbody class="divide-y divide-gray-700/50">
 						{#each instances as inst (inst.id)}
-							<tr class="transition-all hover:bg-white/[0.02]">
+							<tr class="transition-all hover:bg-white/2">
 								<td class="px-8 py-4">
 									<input 
 										type="checkbox" 

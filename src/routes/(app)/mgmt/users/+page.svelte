@@ -47,7 +47,7 @@
 				</thead>
 				<tbody class="divide-y divide-gray-700/50">
 					{#each data.users as user (user.id)}
-						<tr class="transition-all hover:bg-white/[0.02]">
+						<tr class="transition-all hover:bg-white/2">
 							<td class="px-8 py-4">
 								<div class="flex flex-col">
 									<span class="font-bold text-gray-200">{user.username} <span class="ml-2 font-normal text-gray-500">({user.first_name} {user.last_name})</span></span>
@@ -55,9 +55,21 @@
 								</div>
 							</td>
 							<td class="px-8 py-4">
-								<span class="rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-tight {user.role === 'admin' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-gray-900 text-gray-400 border border-gray-700'}">
-									{user.role}
-								</span>
+								<form method="POST" action="?/updateRole" use:enhance>
+									<input type="hidden" name="id" value={user.id} />
+									<select 
+										name="role" 
+										value={user.role} 
+										onchange={(e) => (e.target as HTMLFormElement).form?.requestSubmit()}
+										disabled={user.id === data.user.id}
+										class="rounded-md bg-gray-900 border border-gray-700 px-2.5 py-1 text-[10px] font-black uppercase tracking-tight 
+										{user.role === 'admin' ? 'text-rose-400 border-rose-500/20' : 'text-gray-400'} 
+										focus:border-indigo-500 focus:ring-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										<option value="user">User</option>
+										<option value="admin">Admin</option>
+									</select>
+								</form>
 							</td>
 							<td class="px-8 py-4 text-right">
 								<div class="flex items-center justify-end gap-3">

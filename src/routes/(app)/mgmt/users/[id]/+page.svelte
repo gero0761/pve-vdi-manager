@@ -4,7 +4,7 @@
 
 	let searchTerm = $state('');
 	let filteredInstances = $derived(
-		data.availableInstances.filter(inst => 
+		data.availableInstances.filter((inst: any) => 
 			inst.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
 			inst.vmid.toString().includes(searchTerm)
 		)
@@ -21,7 +21,7 @@
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
 	<header class="mb-10 flex items-center justify-between">
 		<div class="flex items-center gap-4">
-			<a href="/mgmt/users" class="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white transition-all">
+			<a href="/mgmt/users" aria-label="Back to User List" title="Back to User List" class="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white transition-all">
 				<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
 				</svg>
@@ -40,15 +40,15 @@
 				<h3 class="text-lg font-bold text-white mb-4">User Profile</h3>
 				<div class="space-y-4">
 					<div>
-						<label class="block text-xs font-bold text-gray-500 uppercase tracking-widest">Full Name</label>
+						<span class="block text-xs font-bold text-gray-500 uppercase tracking-widest">Full Name</span>
 						<p class="text-gray-200 mt-1">{data.targetUser.first_name} {data.targetUser.last_name}</p>
 					</div>
 					<div>
-						<label class="block text-xs font-bold text-gray-500 uppercase tracking-widest">Username</label>
+						<span class="block text-xs font-bold text-gray-500 uppercase tracking-widest">Username</span>
 						<p class="text-gray-200 mt-1 font-mono">{data.targetUser.username}</p>
 					</div>
 					<div>
-						<label class="block text-xs font-bold text-gray-500 uppercase tracking-widest">Role</label>
+						<span class="block text-xs font-bold text-gray-500 uppercase tracking-widest">Role</span>
 						<span class="mt-2 inline-block rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-tight {data.targetUser.role === 'admin' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-gray-900 text-gray-400 border border-gray-700'}">
 							{data.targetUser.role}
 						</span>
@@ -90,7 +90,7 @@
 							
 							{#if showDropdown && filteredInstances.length > 0}
 								<div class="absolute left-0 right-0 z-10 mt-2 max-h-60 overflow-y-auto rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
-									{#each filteredInstances as inst}
+									{#each filteredInstances as inst (inst.id)}
 										<button
 											type="button"
 											onclick={() => selectInstance(inst.id)}
@@ -130,7 +130,7 @@
 						</thead>
 						<tbody class="divide-y divide-gray-700/50">
 							{#each data.assignedInstances as inst (inst.id)}
-								<tr class="transition-all hover:bg-white/[0.01]">
+								<tr class="transition-all hover:bg-white/1">
 									<td class="px-8 py-4 font-mono text-indigo-400 font-bold">{inst.id}</td>
 									<td class="px-8 py-4 text-gray-400">{inst.vmid}</td>
 									<td class="px-8 py-4 text-right">

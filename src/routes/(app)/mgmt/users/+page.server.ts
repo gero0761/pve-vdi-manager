@@ -1,9 +1,9 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { fail } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { randomBytes, scryptSync } from 'node:crypto';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async () => {
 	const users = await db.getAllUsers();
 	return {
 		users: users.map(u => ({
@@ -51,6 +51,21 @@ export const actions: Actions = {
 		const passwordHash = `${salt.toString('hex')}:${key.toString('hex')}`;
 		
 		await db.updateUser(id, { password_hash: passwordHash });
+		return { success: true };
+	},
+	updateRole: async ({ request, locals }) => {
+		const data = await request.formData();
+		const id = data.get('id')?.toString();
+		const role = data.get('role')?.toString() as 'admin' | 'user';
+		
+		if (!id || !role) return fail(400, { error: 'User ID and role are required' });
+		
+		// Prevent self-role-change
+		if (id === locals.user?.id) {
+			return fail(400, { error: 'You cannot change your own role' });
+		}
+		
+		await db.updateUser(id, { role });
 		return { success: true };
 	}
 };

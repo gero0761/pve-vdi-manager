@@ -1,9 +1,20 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 
-export async function GET() {
+export async function GET({ locals }) {
 	try {
-		const instances = await db.getAllInstances();
+		const user = locals.user;
+		if (!user) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		let instances;
+		if (user.role === 'admin') {
+			instances = await db.getAllInstances();
+		} else {
+			instances = await db.getUserInstances(user.id);
+		}
+		
 		return json({ instances });
 	} catch (err) {
 		console.error('Fetch instances error:', err);
