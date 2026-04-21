@@ -8,7 +8,7 @@
 		disconnect(): void;
 	}
 
-	let { url, password }: { url: string; password?: string } = $props();
+	let { url, password, height = '600px' }: { url: string; password?: string; height?: string } = $props();
 	let canvasContainer: HTMLDivElement | undefined = $state();
 	let rfb: RFBClient | null = $state(null);
 
@@ -37,12 +37,11 @@
 	});
 </script>
 
-<div bind:this={canvasContainer} class="vnc-wrapper"></div>
+<div bind:this={canvasContainer} class="vnc-wrapper" style="height: {height}"></div>
 
 <style>
 	.vnc-wrapper {
 		width: 100%;
-		height: 600px;
 		background: #1a1a1a;
 		border-radius: 8px;
 		overflow: hidden;

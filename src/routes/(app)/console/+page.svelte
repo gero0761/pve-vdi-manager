@@ -1,40 +1,29 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import VncViewer from '$lib/components/VncViewer.svelte';
-	import XtermViewer from '$lib/components/XtermViewer.svelte';
 
 	let vmId = $state(page.url.searchParams.get('id') || '');
-	let vncUrl = $state('');
-	let vncTicket = $state('');
-	let vncUser = $state('');
-	let proxyType = $state('vnc');
 	let isConnecting = $state(false);
+	let hasConnected = $state(false);
 
 	async function handleConnect() {
 		console.log('Connecting to: ' + vmId);
 		if (!vmId) return;
 
-		vncUrl = '';
-		isConnecting = true;
-		try {
-			const res = await fetch(`/api/vnc/${vmId}`, { method: 'POST' });
-			if (!res.ok) throw new Error('Connection failed');
+		hasConnected = true;
+	}
 
-			const data = await res.json();
-			vncUrl = data.url;
-			vncTicket = data.ticket;
-			vncUser = data.user;
-			proxyType = data.proxyType || 'vnc';
-		} catch (err) {
-			console.error('Error fetching VNC console:', err);
-			alert('Error fetching VNC console');
-		} finally {
-			isConnecting = false;
-			/* console.log('Connection URL: ' + vncUrl + '\n');
-			console.log('Ticket: ' + vncTicket + '\n');
-			console.log('User: ' + vncUser + '\n');
-			console.log('Proxy Type: ' + proxyType + '\n'); */
-		}
+	function openPopout() {
+		const url = `/console-viewer/${vmId}`;
+		const width = 1280;
+		const height = 800;
+		const left = (window.screen.width - width) / 2;
+		const top = (window.screen.height - height) / 2;
+		
+		window.open(
+			url, 
+			`console-${vmId}`, 
+			`width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no,scrollbars=no,resizable=yes`
+		);
 	}
 </script>
 
@@ -73,7 +62,7 @@
 								id="vm-id"
 								type="text"
 								bind:value={vmId}
-								placeholder="Enter Instance ID (e.g. 101 or UUID)"
+								placeholder="Enter Instance ID (e.g. abcdefgh)"
 								class="w-full rounded-xl border-gray-700 bg-gray-900 py-3 pl-10 pr-4 text-gray-200 shadow-sm transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
 							/>
 						</div>
@@ -98,7 +87,7 @@
 		</div>
 
 		<!-- Console View Area -->
-		{#if vncUrl}
+		{#if hasConnected}
 			<div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 shadow-2xl ring-1 ring-white/5">
 				<div class="flex items-center justify-between border-b border-gray-800 bg-gray-800/50 px-8 py-4">
 					<div class="flex items-center gap-3">
@@ -107,19 +96,26 @@
 							Console Session: {vmId}
 						</h3>
 					</div>
-					<div class="flex items-center gap-2">
-						<span class="rounded bg-gray-700 px-2 py-1 text-[10px] font-black text-gray-300 uppercase">
-							Mode: {proxyType === 'term' ? 'XTerm.js' : 'noVNC'}
-						</span>
+					<div class="flex items-center gap-4">
+						<button 
+							onclick={openPopout}
+							class="flex items-center gap-2 rounded-lg bg-gray-700/50 px-3 py-1.5 text-[11px] font-bold text-emerald-400 uppercase tracking-tighter transition-all hover:bg-emerald-500/20 hover:text-emerald-300"
+						>
+							<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+							</svg>
+							Popout Fullscreen
+						</button>
 					</div>
 				</div>
-				<div class="bg-black p-4">
-					<div class="mx-auto overflow-hidden rounded-lg border border-gray-800">
-						{#if proxyType === 'term'}
-							<XtermViewer url={vncUrl} ticket={vncTicket} user={vncUser} />
-						{:else}
-							<VncViewer url={vncUrl} password={vncTicket} />
-						{/if}
+				<div class="bg-black">
+					<div class="overflow-hidden border-t border-gray-800">
+						<iframe 
+							src="/console-viewer/{vmId}" 
+							title="Console Viewer"
+							class="w-full border-none"
+							style="height: 600px;"
+						></iframe>
 					</div>
 				</div>
 				<div class="border-t border-gray-800 bg-gray-800/30 px-8 py-3 text-center">

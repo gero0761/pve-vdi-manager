@@ -6,7 +6,7 @@
 
 	const { Terminal } = XTerm;
 
-	let { url, ticket, user }: { url: string; ticket: string; user: string } = $props();
+	let { url, ticket, user, height = '600px' }: { url: string; ticket: string; user: string; height?: string } = $props();
 	let terminalContainer: HTMLDivElement;
 	let ws: WebSocket | null = null;
 	let term: XTerm.Terminal;
@@ -137,12 +137,11 @@
 	});
 </script>
 
-<div bind:this={terminalContainer} class="terminal-wrapper"></div>
+<div bind:this={terminalContainer} class="terminal-wrapper" style="height: {height}"></div>
 
 <style>
 	.terminal-wrapper {
 		width: 100%;
-		height: 600px;
 		background: #1a1a1a;
 		border-radius: 8px;
 		overflow: hidden;
