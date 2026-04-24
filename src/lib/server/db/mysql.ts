@@ -40,7 +40,8 @@ if (DB_TYPE === 'mysql') {
 					vmid INT NOT NULL,
 					type VARCHAR(50) NOT NULL,
 					node VARCHAR(255) NOT NULL,
-					created_at DATETIME NOT NULL
+					created_at DATETIME NOT NULL,
+					sync_status VARCHAR(50) DEFAULT 'synced'
 				)
 			`);
 			await connection.query(`
@@ -73,8 +74,21 @@ if (DB_TYPE === 'mysql') {
 			`);
 			// Try to alter users to add role if we skipped recreation
 			try {
-				await connection.query("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user' NOT NULL");
-			} catch (e) { /* Ignore if it already exists */ }
+				await connection.query(
+					"ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user' NOT NULL"
+				);
+			} catch (e) {
+				/* Ignore if it already exists */
+			}
+
+			// Try to alter instances to add sync_status
+			try {
+				await connection.query(
+					"ALTER TABLE instances ADD COLUMN sync_status VARCHAR(50) DEFAULT 'synced'"
+				);
+			} catch (e) {
+				/* Ignore if it already exists */
+			}
 
 			connection.release();
 			console.log('MySQL schema initialized');
@@ -92,8 +106,15 @@ export const mysqlAdapter: DatabaseAdapter = {
 	},
 	async createInstance(instance: VDIInstance): Promise<void> {
 		await pool.query(
-			'INSERT INTO instances (id, vmid, type, node, created_at) VALUES (?, ?, ?, ?, ?)',
-			[instance.id, instance.vmid, instance.type, instance.node, instance.created_at]
+			'INSERT INTO instances (id, vmid, type, node, created_at, sync_status) VALUES (?, ?, ?, ?, ?, ?)',
+			[
+				instance.id,
+				instance.vmid,
+				instance.type,
+				instance.node,
+				instance.created_at,
+				instance.sync_status || 'synced'
+			]
 		);
 	},
 	async deleteInstance(id: string): Promise<void> {
@@ -103,7 +124,10 @@ export const mysqlAdapter: DatabaseAdapter = {
 		const [rows] = await pool.query('SELECT * FROM instances ORDER BY created_at DESC');
 		return rows as VDIInstance[];
 	},
-	
+	async updateInstanceSyncStatus(id: string, status: string): Promise<void> {
+		await pool.query('UPDATE instances SET sync_status = ? WHERE id = ?', [status, id]);
+	},
+
 	// User Management
 	async getUserByUsername(username: string): Promise<import('./types').User | undefined> {
 		const [rows] = await pool.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
@@ -118,7 +142,14 @@ export const mysqlAdapter: DatabaseAdapter = {
 	async createUser(user: import('./types').User): Promise<void> {
 		await pool.query(
 			'INSERT INTO users (id, username, password_hash, first_name, last_name, role) VALUES (?, ?, ?, ?, ?, ?)',
-			[user.id, user.username, user.password_hash, user.first_name, user.last_name, user.role || 'user']
+			[
+				user.id,
+				user.username,
+				user.password_hash,
+				user.first_name,
+				user.last_name,
+				user.role || 'user'
+			]
 		);
 	},
 	async getAllUsers(): Promise<import('./types').User[]> {
@@ -129,15 +160,15 @@ export const mysqlAdapter: DatabaseAdapter = {
 		await pool.query('DELETE FROM users WHERE id = ?', [id]);
 	},
 	async updateUser(id: string, user: Partial<import('./types').User>): Promise<void> {
-		const fields = Object.keys(user).filter(k => k !== 'id');
+		const fields = Object.keys(user).filter((k) => k !== 'id');
 		if (fields.length === 0) return;
-		
-		const sets = fields.map(f => `${f} = ?`).join(', ');
-		const values = fields.map(f => (user as any)[f]);
-		
+
+		const sets = fields.map((f) => `${f} = ?`).join(', ');
+		const values = fields.map((f) => (user as any)[f]);
+
 		await pool.query(`UPDATE users SET ${sets} WHERE id = ?`, [...values, id]);
 	},
-	
+
 	// Session Management
 	async createSession(session: import('./types').Session): Promise<void> {
 		await pool.query(
@@ -153,24 +184,36 @@ export const mysqlAdapter: DatabaseAdapter = {
 	async deleteSession(id: string): Promise<void> {
 		await pool.query('DELETE FROM sessions WHERE id = ?', [id]);
 	},
-	
+
 	// Access Management
 	async assignInstanceToUser(userId: string, instanceId: string): Promise<void> {
-		await pool.query('INSERT IGNORE INTO user_instances (user_id, instance_id) VALUES (?, ?)', [userId, instanceId]);
+		await pool.query('INSERT IGNORE INTO user_instances (user_id, instance_id) VALUES (?, ?)', [
+			userId,
+			instanceId
+		]);
 	},
 	async removeInstanceFromUser(userId: string, instanceId: string): Promise<void> {
-		await pool.query('DELETE FROM user_instances WHERE user_id = ? AND instance_id = ?', [userId, instanceId]);
+		await pool.query('DELETE FROM user_instances WHERE user_id = ? AND instance_id = ?', [
+			userId,
+			instanceId
+		]);
 	},
 	async getUserInstances(userId: string): Promise<VDIInstance[]> {
-		const [rows] = await pool.query(`
+		const [rows] = await pool.query(
+			`
 			SELECT i.* FROM instances i
 			JOIN user_instances ui ON i.id = ui.instance_id
 			WHERE ui.user_id = ?
-		`, [userId]);
+		`,
+			[userId]
+		);
 		return rows as VDIInstance[];
 	},
 	async hasInstanceAccess(userId: string, instanceId: string): Promise<boolean> {
-		const [rows] = await pool.query('SELECT 1 FROM user_instances WHERE user_id = ? AND instance_id = ? LIMIT 1', [userId, instanceId]);
+		const [rows] = await pool.query(
+			'SELECT 1 FROM user_instances WHERE user_id = ? AND instance_id = ? LIMIT 1',
+			[userId, instanceId]
+		);
 		return (rows as any[]).length > 0;
 	}
 };

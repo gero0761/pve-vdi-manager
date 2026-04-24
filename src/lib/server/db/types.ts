@@ -4,6 +4,7 @@ export interface VDIInstance {
 	type: 'qemu' | 'lxc';
 	node: string;
 	created_at: Date;
+	sync_status?: string;
 }
 
 export interface User {
@@ -32,6 +33,7 @@ export interface DatabaseAdapter {
 	createInstance(instance: VDIInstance): Promise<void>;
 	deleteInstance(id: string): Promise<void>;
 	getAllInstances(): Promise<VDIInstance[]>;
+	updateInstanceSyncStatus(id: string, status: string): Promise<void>;
 	
 	// User Management
 	getUserByUsername(username: string): Promise<User | undefined>;

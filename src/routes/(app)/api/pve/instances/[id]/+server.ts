@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { pveFetch } from '$lib/server/pve';
+import { runSyncJob } from '$lib/server/sync.js';
 
 // GET /api/pve/instances/[id] -> Get current status and IP from Proxmox
 export async function GET({ params, locals }) {
@@ -45,10 +46,10 @@ export async function GET({ params, locals }) {
 						`/nodes/${instance.node}/qemu/${instance.vmid}/agent/network-get-interfaces`
 					);
 					const agentData = await agentRes.json();
-					
+
 					// Proxmox agent calls usually return data in .data.result
 					const interfaces = agentData.data?.result || agentData.data;
-					
+
 					if (interfaces && Array.isArray(interfaces)) {
 						for (const iface of interfaces) {
 							if (iface.name === 'lo') continue;
@@ -112,7 +113,7 @@ export async function DELETE({ params, locals }) {
 	const { id } = params;
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
-	
+
 	// Delete is ADMIN ONLY
 	if (user.role !== 'admin') {
 		return json({ error: 'Forbidden' }, { status: 403 });
@@ -125,21 +126,26 @@ export async function DELETE({ params, locals }) {
 	}
 
 	try {
-		// 1. Stop if running (Proxmox requires stopped for deletion)
-		try {
-			await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/stop`, {
-				method: 'POST'
-			});
-			// Wait a bit for it to stop
-			await new Promise((r) => setTimeout(r, 1000));
-		} catch {
-			// Ignore if already stopped
-		}
+		// Only try to stop and delete from Proxmox if it's not orphaned
+		await runSyncJob();
 
-		// 2. Delete from Proxmox
-		await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}`, {
-			method: 'DELETE'
-		});
+		if (instance.sync_status !== 'orphaned') {
+			// 1. Stop if running (Proxmox requires stopped for deletion)
+			try {
+				await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/stop`, {
+					method: 'POST'
+				});
+				// Wait a bit for it to stop
+				await new Promise((r) => setTimeout(r, 1000));
+			} catch {
+				// Ignore if already stopped
+			}
+
+			// 2. Delete from Proxmox
+			await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}`, {
+				method: 'DELETE'
+			});
+		}
 
 		// 3. Delete from DB
 		await db.deleteInstance(id);

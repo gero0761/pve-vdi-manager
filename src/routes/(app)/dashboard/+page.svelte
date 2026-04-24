@@ -1,6 +1,52 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ActionQueue from '$lib/components/ActionQueue.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+
+	let confirmState = $state({
+		isOpen: false,
+		title: 'Confirm',
+		message: '',
+		confirmText: 'Yes',
+		cancelText: 'Cancel' as string | undefined,
+		type: 'warning' as 'danger' | 'warning' | 'info',
+		onConfirm: () => {},
+		onCancel: () => {}
+	});
+
+	function requestConfirm({
+		title,
+		message,
+		confirmText = 'Yes',
+		cancelText = 'Cancel',
+		type = 'warning'
+	}: {
+		title: string;
+		message: string;
+		confirmText?: string;
+		cancelText?: string;
+		type?: 'danger' | 'warning' | 'info';
+	}): Promise<boolean> {
+		return new Promise((resolve) => {
+			confirmState = {
+				isOpen: true,
+				title,
+				message,
+				confirmText,
+				cancelText,
+				type,
+				onConfirm: () => {
+					resolve(true);
+					confirmState.isOpen = false;
+				},
+				onCancel: () => {
+					resolve(false);
+					confirmState.isOpen = false;
+				}
+			};
+		});
+	}
+
 	let { data } = $props();
 
 	type Template = { vmid: number; name: string; node: string; type: 'qemu' | 'lxc' };
@@ -12,6 +58,7 @@
 		created_at: number;
 		status?: 'running' | 'stopped' | 'unknown' | 'loading';
 		ip?: string | null;
+		sync_status?: string;
 	};
 
 	let templates: Template[] = $state([]);
@@ -140,8 +187,15 @@
 		}
 	}
 
-	function deleteInstance(id: string) {
-		if (!confirm('Are you sure you want to delete this instance from Proxmox and our database?')) {
+	async function deleteInstance(id: string) {
+		const confirmed = await requestConfirm({
+			title: 'Delete Instance',
+			message:
+				'Are you sure you want to delete this instance from Proxmox and our database?<br/><br/>This action cannot be undone.',
+			confirmText: 'Delete',
+			type: 'danger'
+		});
+		if (!confirmed) {
 			return;
 		}
 		return doDelete(id, false);
@@ -162,8 +216,13 @@
 	}
 
 	async function performBatchAction(action: 'stop' | 'start' | 'shutdown') {
-		if (!confirm(`Are you sure you want to ${action} ${selectedInstances.length} instances?`))
-			return;
+		const confirmed = await requestConfirm({
+			title: `Batch ${action.toUpperCase()}`,
+			message: `Are you sure you want to <strong>${action}</strong> ${selectedInstances.length} instances?`,
+			confirmText: action === 'stop' || action === 'shutdown' ? 'Stop' : 'Start',
+			type: action === 'start' ? 'info' : 'warning'
+		});
+		if (!confirmed) return;
 		isBatchActionRunning = true;
 
 		const chunkSize = 5;
@@ -178,15 +237,39 @@
 	async function deleteBatchInstances() {
 		const toDelete = selectedInstances.filter((id) => {
 			const inst = instances.find((i) => i.id === id);
-			return inst && inst.status === 'stopped';
+			return inst && (inst.status === 'stopped' || inst.sync_status === 'orphaned');
 		});
 
 		if (toDelete.length === 0) {
-			alert('No stopped instances selected. Only stopped instances can be deleted.');
+			await requestConfirm({
+				title: 'Invalid Selection',
+				message:
+					'No valid instances selected. Only <strong>stopped</strong> or <strong>orphaned</strong> instances can be deleted.',
+				confirmText: 'OK',
+				cancelText: '',
+				type: 'info'
+			});
 			return;
 		}
 
-		if (!confirm(`Are you sure you want to delete ${toDelete.length} stopped instances?`)) return;
+		// Count orphaned vs normal for the confirmation message
+		const orphanedCount = toDelete.filter((id) => {
+			const inst = instances.find((i) => i.id === id);
+			return inst?.sync_status === 'orphaned';
+		}).length;
+
+		let promptMsg = `Are you sure you want to delete <strong>${toDelete.length} instances</strong>?`;
+		if (orphanedCount > 0) {
+			promptMsg = `Are you sure you want to delete <strong>${toDelete.length} instances</strong>?<br/><br/><span class="text-sm font-semibold text-amber-400">Includes ${orphanedCount} orphaned instances</span>`;
+		}
+
+		const confirmed = await requestConfirm({
+			title: 'Batch Delete',
+			message: promptMsg,
+			confirmText: 'Delete All',
+			type: 'danger'
+		});
+		if (!confirmed) return;
 		isBatchActionRunning = true;
 
 		const chunkSize = 5;
@@ -544,7 +627,12 @@
 								</td>
 								<td class="px-8 py-4 text-center">
 									<div class="flex justify-center">
-										{#if inst.status === 'running'}
+										{#if inst.sync_status === 'orphaned'}
+											<span
+												class="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.8)]"
+												title="Status: Orphaned / Missing in Proxmox"
+											></span>
+										{:else if inst.status === 'running'}
 											<span
 												class="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]"
 												title="Status: Running"
@@ -624,7 +712,7 @@
 									{#if data.user.role === 'admin'}
 										<button
 											onclick={() => deleteInstance(inst.id)}
-											disabled={inst.status !== 'stopped'}
+											disabled={inst.status !== 'stopped' && inst.sync_status !== 'orphaned'}
 											class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
 											title="Permanent Delete"
 										>
@@ -653,6 +741,7 @@
 	{/if}
 </div>
 
+<ConfirmDialog {...confirmState} />
 <ActionQueue />
 
 <style>

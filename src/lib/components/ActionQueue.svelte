@@ -48,6 +48,7 @@
 							? 'animate-ping bg-indigo-400 opacity-75'
 							: 'bg-gray-500 opacity-0'} rounded-full"
 					></span>
+
 					<span
 						class="relative inline-flex h-3 w-3 rounded-full {$taskQueue.length > 0
 							? 'bg-indigo-500'
