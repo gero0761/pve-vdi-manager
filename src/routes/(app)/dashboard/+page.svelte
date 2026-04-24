@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	let { data } = $props();
 
 	type Template = { vmid: number; name: string; node: string; type: 'qemu' | 'lxc' };
@@ -57,7 +58,7 @@
 		} finally {
 			activeFetches--;
 			// Process next in queue
-			setTimeout(processQueue, 100); 
+			setTimeout(processQueue, 100);
 		}
 	}
 
@@ -161,15 +162,16 @@
 	}
 
 	async function performBatchAction(action: 'stop' | 'start' | 'shutdown') {
-		if (!confirm(`Are you sure you want to ${action} ${selectedInstances.length} instances?`)) return;
+		if (!confirm(`Are you sure you want to ${action} ${selectedInstances.length} instances?`))
+			return;
 		isBatchActionRunning = true;
-		
+
 		const chunkSize = 5;
 		for (let i = 0; i < selectedInstances.length; i += chunkSize) {
 			const chunk = selectedInstances.slice(i, i + chunkSize);
 			await Promise.allSettled(chunk.map((id) => doAction(id, action, true)));
 		}
-		
+
 		isBatchActionRunning = false;
 	}
 
@@ -281,7 +283,9 @@
 	<!-- Page Title -->
 	<header class="mb-10 flex items-center justify-between">
 		<div>
-			<h1 class="text-3xl font-extrabold tracking-tight text-white">{data.user.role === 'admin' ? 'Admin Dashboard' : 'VDI Dashboard'}</h1>
+			<h1 class="text-3xl font-extrabold tracking-tight text-white">
+				{data.user.role === 'admin' ? 'Admin Dashboard' : 'VDI Dashboard'}
+			</h1>
 			<p class="mt-2 text-sm text-gray-400">
 				{#if data.user.role === 'admin'}
 					Manage templates and monitor all active VDI instances across your cluster.
@@ -290,23 +294,36 @@
 				{/if}
 			</p>
 		</div>
-		<div class="flex items-center space-x-2 text-xs font-bold text-gray-500 uppercase tracking-widest">
-			<span class="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+		<div
+			class="flex items-center space-x-2 text-xs font-bold tracking-widest text-gray-500 uppercase"
+		>
+			<span class="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
 			<span>Live Status</span>
 		</div>
 	</header>
 
 	{#if data.user.role === 'admin'}
 		{#if loadingTemplates}
-			<div class="flex flex-col items-center justify-center rounded-2xl border border-gray-800 bg-gray-800/50 p-20 text-center shadow-2xl backdrop-blur-sm">
-				<div class="h-12 w-12 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent mb-4"></div>
+			<div
+				class="flex flex-col items-center justify-center rounded-2xl border border-gray-800 bg-gray-800/50 p-20 text-center shadow-2xl backdrop-blur-sm"
+			>
+				<div
+					class="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"
+				></div>
 				<span class="text-lg font-medium text-gray-300">Scanning Proxmox for Templates...</span>
 			</div>
 		{:else if templateError}
-			<div class="rounded-xl border border-red-500/50 bg-red-500/10 p-6 font-medium text-red-400 shadow-xl">
+			<div
+				class="rounded-xl border border-red-500/50 bg-red-500/10 p-6 font-medium text-red-400 shadow-xl"
+			>
 				<div class="flex items-center gap-3">
 					<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+						/>
 					</svg>
 					<span>Proxmox Error: {templateError}</span>
 				</div>
@@ -331,36 +348,46 @@
 				<div class="space-y-2">
 					<h3 class="text-2xl font-bold text-white">No Templates Found</h3>
 					<p class="mx-auto max-w-lg leading-relaxed text-gray-400">
-						We could not find any VM or LXC templates on your Proxmox cluster. Please log into Proxmox,
-						right-click an existing VM or container, and select <strong>Convert to template</strong> to get
-						started.
+						We could not find any VM or LXC templates on your Proxmox cluster. Please log into
+						Proxmox, right-click an existing VM or container, and select <strong
+							>Convert to template</strong
+						> to get started.
 					</p>
 				</div>
 			</div>
 		{:else}
 			<!-- Deployment Card -->
-			<div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-800 shadow-2xl ring-1 ring-white/5">
+			<div
+				class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-800 shadow-2xl ring-1 ring-white/5"
+			>
 				<div class="border-b border-gray-700 bg-gray-800/50 px-8 py-5">
 					<h2 class="flex items-center gap-3 text-lg font-bold text-white">
 						<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+								/>
 							</svg>
 						</div>
 						Deploy New Instances
 					</h2>
 				</div>
-				
+
 				<div class="p-8">
 					<div class="flex flex-col items-end gap-6 lg:flex-row">
 						<div class="flex-1 space-y-2">
-							<label for="template-select" class="block text-sm font-bold text-gray-400 uppercase tracking-tight"
+							<label
+								for="template-select"
+								class="block text-sm font-bold tracking-tight text-gray-400 uppercase"
 								>Source Template</label
 							>
 							<select
 								id="template-select"
 								bind:value={selectedTemplateIndex}
-								class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 pl-4 pr-10 text-gray-200 shadow-sm transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+								class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 pr-10 pl-4 text-gray-200 shadow-sm transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
 							>
 								{#each templates as t, i (t.vmid)}
 									<option value={i}
@@ -370,7 +397,10 @@
 							</select>
 						</div>
 						<div class="w-full space-y-2 lg:w-32">
-							<label for="instance-count" class="block text-sm font-bold text-gray-400 uppercase tracking-tight">Count</label>
+							<label
+								for="instance-count"
+								class="block text-sm font-bold tracking-tight text-gray-400 uppercase">Count</label
+							>
 							<input
 								id="instance-count"
 								type="number"
@@ -383,12 +413,23 @@
 						<button
 							onclick={handleDeploy}
 							disabled={isCloning}
-							class="flex h-[46px] w-full min-w-[200px] items-center justify-center rounded-xl bg-indigo-600 px-8 py-3 font-bold text-white shadow-lg shadow-indigo-600/30 transition-all hover:bg-indigo-500 hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+							class="flex h-[46px] w-full min-w-[200px] items-center justify-center rounded-xl bg-indigo-600 px-8 py-3 font-bold text-white shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
 						>
 							{#if isCloning}
 								<svg class="mr-3 h-5 w-5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+									<circle
+										class="opacity-25"
+										cx="12"
+										cy="12"
+										r="10"
+										stroke="currentColor"
+										stroke-width="4"
+									></circle>
+									<path
+										class="opacity-75"
+										fill="currentColor"
+										d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+									></path>
 								</svg>
 								Working...
 							{:else}
@@ -397,7 +438,9 @@
 						</button>
 					</div>
 					{#if cloneError}
-						<div class="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-medium text-red-400">
+						<div
+							class="mt-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm font-medium text-red-400"
+						>
 							{cloneError}
 						</div>
 					{/if}
@@ -408,20 +451,31 @@
 
 	<!-- Instances Table Section -->
 	{#if instances.length > 0}
-		<div class="mt-12 overflow-hidden rounded-2xl border border-gray-800 bg-gray-800 shadow-2xl ring-1 ring-white/5">
-			<div class="flex flex-col gap-6 border-b border-gray-700 bg-gray-800/50 px-8 py-6 md:flex-row md:items-center md:justify-between">
+		<div
+			class="mt-12 overflow-hidden rounded-2xl border border-gray-800 bg-gray-800 shadow-2xl ring-1 ring-white/5"
+		>
+			<div
+				class="flex flex-col gap-6 border-b border-gray-700 bg-gray-800/50 px-8 py-6 md:flex-row md:items-center md:justify-between"
+			>
 				<div>
 					<h3 class="text-xl font-extrabold text-white">Active Instances</h3>
 					<span class="mt-1 flex items-center gap-1.5 text-xs font-medium text-gray-500">
 						<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+							/>
 						</svg>
 						Refreshed every 10 seconds
 					</span>
 				</div>
-                
+
 				{#if selectedInstances.length > 0}
-					<div class="flex flex-wrap items-center gap-3 rounded-xl bg-gray-900/50 p-2 border border-gray-700">
+					<div
+						class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-700 bg-gray-900/50 p-2"
+					>
 						<span class="px-3 text-sm font-bold text-gray-400">
 							{selectedInstances.length} Selected
 						</span>
@@ -440,13 +494,13 @@
 							Stop
 						</button>
 						{#if data.user.role === 'admin'}
-						<button
-							onclick={deleteBatchInstances}
-							disabled={isBatchActionRunning}
-							class="rounded-lg bg-red-500/20 px-4 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500 hover:text-white disabled:opacity-50"
-						>
-							Delete
-						</button>
+							<button
+								onclick={deleteBatchInstances}
+								disabled={isBatchActionRunning}
+								class="rounded-lg bg-red-500/20 px-4 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500 hover:text-white disabled:opacity-50"
+							>
+								Delete
+							</button>
 						{/if}
 					</div>
 				{/if}
@@ -455,11 +509,13 @@
 			<div class="overflow-x-auto">
 				<table class="w-full text-left text-sm whitespace-nowrap">
 					<thead>
-						<tr class="bg-gray-900/50 text-[11px] font-bold uppercase tracking-widest text-gray-500">
-							<th class="px-8 py-5 w-4">
-								<input 
-									type="checkbox" 
-									checked={allSelected} 
+						<tr
+							class="bg-gray-900/50 text-[11px] font-bold tracking-widest text-gray-500 uppercase"
+						>
+							<th class="w-4 px-8 py-5">
+								<input
+									type="checkbox"
+									checked={allSelected}
 									onchange={toggleSelectAll}
 									class="h-4 w-4 rounded border-gray-700 bg-gray-900 text-indigo-600 focus:ring-0"
 								/>
@@ -471,7 +527,7 @@
 							<th class="px-8 py-5">Network IP</th>
 							<th class="px-8 py-5">Controls</th>
 							{#if data.user.role === 'admin'}
-							<th class="px-8 py-5 text-right w-10">Remove</th>
+								<th class="w-10 px-8 py-5 text-right">Remove</th>
 							{/if}
 						</tr>
 					</thead>
@@ -479,9 +535,9 @@
 						{#each instances as inst (inst.id)}
 							<tr class="transition-all hover:bg-white/2">
 								<td class="px-8 py-4">
-									<input 
-										type="checkbox" 
-										value={inst.id} 
+									<input
+										type="checkbox"
+										value={inst.id}
 										bind:group={selectedInstances}
 										class="h-4 w-4 rounded border-gray-700 bg-gray-900 text-indigo-600 focus:ring-0"
 									/>
@@ -494,7 +550,9 @@
 												title="Status: Running"
 											></span>
 										{:else if inst.status === 'stopped'}
-											<span class="h-2.5 w-2.5 rounded-full bg-gray-600 border border-gray-500" title="Status: Stopped"
+											<span
+												class="h-2.5 w-2.5 rounded-full border border-gray-500 bg-gray-600"
+												title="Status: Stopped"
 											></span>
 										{:else}
 											<span
@@ -505,15 +563,21 @@
 									</div>
 								</td>
 								<td class="px-8 py-4">
-									<a href="/console/?id={inst.id}" target="_blank" class="font-mono text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline">
+									<a
+										href="/console/?id={inst.id}"
+										target="_blank"
+										class="font-mono text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline"
+									>
 										{inst.id}
 									</a>
 								</td>
 								<td class="px-8 py-4 font-bold text-gray-300">{inst.vmid}</td>
 								<td class="px-8 py-4">
 									<span
-										class="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-tight
-                                        {inst.type === 'qemu' ? 'text-sky-400' : 'text-fuchsia-400'}"
+										class="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[10px] font-black tracking-tight uppercase
+                                        {inst.type === 'qemu'
+											? 'text-sky-400'
+											: 'text-fuchsia-400'}"
 									>
 										{inst.type}
 									</span>
@@ -523,7 +587,7 @@
 										<span class="font-mono text-xs font-semibold text-gray-300">{inst.ip}</span>
 									{:else if inst.status === 'running'}
 										<span class="flex items-center gap-2 text-xs font-medium text-gray-500 italic">
-											<div class="h-1 w-1 bg-gray-600 rounded-full animate-bounce"></div>
+											<div class="h-1 w-1 animate-bounce rounded-full bg-gray-600"></div>
 											Fetching IP...
 										</span>
 									{:else}
@@ -539,7 +603,9 @@
 											title="Start Instance"
 										>
 											<svg class="h-4.5 w-4.5" fill="currentColor" viewBox="0 0 20 20">
-												<path d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z" />
+												<path
+													d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z"
+												/>
 											</svg>
 										</button>
 										<button
@@ -556,16 +622,26 @@
 								</td>
 								<td class="px-8 py-4 text-right">
 									{#if data.user.role === 'admin'}
-									<button
-										onclick={() => deleteInstance(inst.id)}
-										disabled={inst.status !== 'stopped'}
-										class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-										title="Permanent Delete"
-									>
-										<svg class="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-										</svg>
-									</button>
+										<button
+											onclick={() => deleteInstance(inst.id)}
+											disabled={inst.status !== 'stopped'}
+											class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+											title="Permanent Delete"
+										>
+											<svg
+												class="h-4.5 w-4.5"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+												/>
+											</svg>
+										</button>
 									{/if}
 								</td>
 							</tr>
@@ -576,6 +652,8 @@
 		</div>
 	{/if}
 </div>
+
+<ActionQueue />
 
 <style>
 	/* Zebra stripping alternative for dark theme */

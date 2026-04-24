@@ -79,27 +79,36 @@ export async function POST({ request }) {
 
 			if (!success) throw new Error(`Failed to clone after several attempts due to disk lock.`);
 
-			// Background polling: Starts the instance after cloning is done
-			(async () => {
-				let isDone = false;
-				while (!isDone) {
-					await sleep(3000);
-					try {
-						const taskRes = await pveFetch(`/nodes/${template_node}/tasks/${upid}/status`);
-						const taskData = await taskRes.json();
-						if (taskData.data.status === 'stopped') {
-							isDone = true;
-							if (taskData.data.exitstatus === 'OK') {
-								await pveFetch(`/nodes/${template_node}/${template_type}/${newid}/status/start`, {
-									method: 'POST'
-								});
-							}
-						}
-					} catch (e) {
-						console.error('Auto-start polling error:', e);
+			// Wait for the clone task to COMPLETE sequentially before moving to the next iteration
+			// This prevents Proxmox storage lock timeouts when cloning multiple instances
+			let taskExitStatus = '';
+			let isDone = false;
+			let pollCount = 0;
+			const maxPolls = 60; // Max 90 seconds wait per clone task
+
+			while (!isDone && pollCount < maxPolls) {
+				pollCount++;
+				await sleep(1500);
+				try {
+					const taskRes = await pveFetch(`/nodes/${template_node}/tasks/${upid}/status`);
+					if (!taskRes.ok) continue;
+					const taskData = await taskRes.json();
+					if (taskData.data?.status === 'stopped') {
+						isDone = true;
+						taskExitStatus = taskData.data.exitstatus;
 					}
+				} catch (e) {
+					console.error('Task polling error:', e);
 				}
-			})();
+			}
+
+			if (!isDone) {
+				throw new Error(`Timed out waiting for Proxmox clone task to complete.`);
+			}
+
+			if (taskExitStatus !== 'OK') {
+				throw new Error(`PVE Clone task failed for VM ${newid}: ${taskExitStatus}`);
+			}
 
 			const instance = {
 				id: generatedId,
@@ -112,8 +121,16 @@ export async function POST({ request }) {
 			await db.createInstance(instance);
 			clones.push(instance);
 
-			// Small buffer between iterations to give the API some time
-			await sleep(500);
+			// Background auto-start (we do not need to block the next clone operation for it to boot)
+			(async () => {
+				try {
+					await pveFetch(`/nodes/${template_node}/${template_type}/${newid}/status/start`, {
+						method: 'POST'
+					});
+				} catch (e) {
+					console.error('Auto-start error:', e);
+				}
+			})();
 		}
 
 		return json({ clones });
