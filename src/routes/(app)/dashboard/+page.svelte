@@ -742,7 +742,9 @@
 </div>
 
 <ConfirmDialog {...confirmState} />
-<ActionQueue />
+{#if data.user.role === 'admin'}
+	<ActionQueue />
+{/if}
 
 <style>
 	/* Zebra stripping alternative for dark theme */

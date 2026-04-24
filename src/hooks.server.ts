@@ -65,6 +65,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Admin-only routes
 	const isAdminRoute =
 		event.url.pathname.startsWith('/mgmt') ||
+		event.url.pathname.startsWith('/api/pve/tasks') ||
 		event.url.pathname.startsWith('/api/pve/clone') ||
 		event.url.pathname.startsWith('/api/pve/templates');
 
