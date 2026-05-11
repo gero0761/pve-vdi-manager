@@ -68,7 +68,7 @@ export const sqliteAdapter: DatabaseAdapter = {
 		stmt.run(id);
 	},
 	async getAllInstances(): Promise<VDIInstance[]> {
-		const stmt = db.prepare('SELECT * FROM instances ORDER BY created_at DESC');
+		const stmt = db.prepare('SELECT * FROM instances ORDER BY vmid ASC');
 		return stmt.all() as VDIInstance[];
 	},
 	async updateInstanceSyncStatus(id: string, status: string): Promise<void> {
@@ -154,6 +154,7 @@ export const sqliteAdapter: DatabaseAdapter = {
 			SELECT i.* FROM instances i
 			JOIN user_instances ui ON i.id = ui.instance_id
 			WHERE ui.user_id = ?
+			ORDER BY i.vmid ASC
 		`);
 		return stmt.all(userId) as VDIInstance[];
 	},
