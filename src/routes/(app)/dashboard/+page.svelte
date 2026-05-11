@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import InstanceDeleteModal from '$lib/components/InstanceDeleteModal.svelte';
 
 	let confirmState = $state({
 		isOpen: false,
@@ -12,6 +13,12 @@
 		type: 'warning' as 'danger' | 'warning' | 'info',
 		onConfirm: () => {},
 		onCancel: () => {}
+	});
+
+	let deleteModalState = $state({
+		isOpen: false,
+		instanceIds: [] as string[],
+		vmid: 0
 	});
 
 	function requestConfirm({
@@ -59,6 +66,11 @@
 		status?: 'running' | 'stopped' | 'unknown' | 'loading';
 		ip?: string | null;
 		sync_status?: string;
+        permissions?: {
+            power: boolean;
+            delete: boolean;
+            console: boolean;
+        };
 	};
 
 	let templates: Template[] = $state([]);
@@ -164,13 +176,15 @@
 		return doAction(id, action, false);
 	}
 
-	async function doDelete(id: string, silent = false) {
+	async function doDelete(id: string, keepGroupIds: string[] = [], silent = false) {
 		const inst = instances.find((i) => i.id === id);
 		if (inst) inst.status = 'loading';
 
 		try {
 			const res = await fetch(`/api/pve/instances/${id}`, {
-				method: 'DELETE'
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ keepGroupIds })
 			});
 			const data = await res.json();
 			if (data.error) {
@@ -188,17 +202,14 @@
 	}
 
 	async function deleteInstance(id: string) {
-		const confirmed = await requestConfirm({
-			title: 'Delete Instance',
-			message:
-				'Are you sure you want to delete this instance from Proxmox and our database?<br/><br/>This action cannot be undone.',
-			confirmText: 'Delete',
-			type: 'danger'
-		});
-		if (!confirmed) {
-			return;
-		}
-		return doDelete(id, false);
+		const inst = instances.find(i => i.id === id);
+		if (!inst) return;
+
+		deleteModalState = {
+			isOpen: true,
+			instanceIds: [id],
+			vmid: inst.vmid
+		};
 	}
 
 	let selectedInstances: string[] = $state([]);
@@ -263,22 +274,22 @@
 			promptMsg = `Are you sure you want to delete <strong>${toDelete.length} instances</strong>?<br/><br/><span class="text-sm font-semibold text-amber-400">Includes ${orphanedCount} orphaned instances</span>`;
 		}
 
-		const confirmed = await requestConfirm({
-			title: 'Batch Delete',
-			message: promptMsg,
-			confirmText: 'Delete All',
-			type: 'danger'
-		});
-		if (!confirmed) return;
-		isBatchActionRunning = true;
+		deleteModalState = {
+			isOpen: true,
+			instanceIds: toDelete,
+			vmid: 0
+		};
+	}
 
+	async function finalizeBatchDelete(ids: string[], keepGroupIds: string[]) {
+		isBatchActionRunning = true;
 		const chunkSize = 5;
-		for (let i = 0; i < toDelete.length; i += chunkSize) {
-			const chunk = toDelete.slice(i, i + chunkSize);
-			await Promise.allSettled(chunk.map((id) => doDelete(id, true)));
+		for (let i = 0; i < ids.length; i += chunkSize) {
+			const chunk = ids.slice(i, i + chunkSize);
+			await Promise.allSettled(chunk.map((id) => doDelete(id, keepGroupIds, true)));
 		}
 
-		selectedInstances = selectedInstances.filter((id) => !toDelete.includes(id));
+		selectedInstances = selectedInstances.filter((id) => !ids.includes(id));
 		isBatchActionRunning = false;
 	}
 
@@ -576,7 +587,7 @@
 						>
 							Stop
 						</button>
-						{#if data.user.role === 'admin'}
+						{#if data.user.role === 'admin' || selectedInstances.some(id => instances.find(i => i.id === id)?.permissions?.delete)}
 							<button
 								onclick={deleteBatchInstances}
 								disabled={isBatchActionRunning}
@@ -603,13 +614,15 @@
 									class="h-4 w-4 rounded border-gray-700 bg-gray-900 text-indigo-600 focus:ring-0"
 								/>
 							</th>
-							<th class="px-8 py-5 text-center">Status</th>
-							<th class="px-8 py-5">Instance ID</th>
-							<th class="px-8 py-5">VMID</th>
-							<th class="px-8 py-5">Type</th>
-							<th class="px-8 py-5">Network IP</th>
-							<th class="px-8 py-5">Controls</th>
-							{#if data.user.role === 'admin'}
+							<th class="px-8 py-5 text-left">Status</th>
+							<th class="px-8 py-5 text-left">Instance ID</th>
+							<th class="px-8 py-5 text-left">VMID</th>
+							<th class="px-8 py-5 text-left">Type</th>
+							<th class="px-8 py-5 text-left">Network IP</th>
+							{#if data.user.role === 'admin' || instances.some(i => i.permissions?.power)}
+								<th class="px-8 py-5 text-center">Controls</th>
+							{/if}
+							{#if data.user.role === 'admin' || instances.some(i => i.permissions?.delete)}
 								<th class="w-10 px-8 py-5 text-right">Remove</th>
 							{/if}
 						</tr>
@@ -651,13 +664,22 @@
 									</div>
 								</td>
 								<td class="px-8 py-4">
-									<a
-										href="/console/?id={inst.id}"
-										target="_blank"
-										class="font-mono text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline"
-									>
-										{inst.id}
-									</a>
+									{#if data.user.role === 'admin' || inst.permissions?.console}
+										<a
+											href="/console/?id={inst.id}"
+											target="_blank"
+											class="font-mono text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline"
+										>
+											{inst.id}
+										</a>
+									{:else}
+										<span 
+											class="font-mono text-sm font-bold text-gray-600 cursor-not-allowed"
+											title="No console permission"
+										>
+											{inst.id}
+										</span>
+									{/if}
 								</td>
 								<td class="px-8 py-4 font-bold text-gray-300">{inst.vmid}</td>
 								<td class="px-8 py-4">
@@ -682,56 +704,66 @@
 										<span class="text-xs text-gray-600">—</span>
 									{/if}
 								</td>
-								<td class="px-8 py-4">
-									<div class="flex items-center gap-3">
-										<button
-											onclick={() => performAction(inst.id, 'start')}
-											disabled={inst.status === 'running' || inst.status === 'loading'}
-											class="flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 transition-all hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-											title="Start Instance"
-										>
-											<svg class="h-4.5 w-4.5" fill="currentColor" viewBox="0 0 20 20">
-												<path
-													d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z"
-												/>
-											</svg>
-										</button>
-										<button
-											onclick={() => performAction(inst.id, 'stop')}
-											disabled={inst.status === 'stopped' || inst.status === 'loading'}
-											class="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-500 transition-all hover:bg-amber-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-											title="Stop Instance"
-										>
-											<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-												<path d="M5 5h10v10H5z" />
-											</svg>
-										</button>
-									</div>
-								</td>
-								<td class="px-8 py-4 text-right">
-									{#if data.user.role === 'admin'}
-										<button
-											onclick={() => deleteInstance(inst.id)}
-											disabled={inst.status !== 'stopped' && inst.sync_status !== 'orphaned'}
-											class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-											title="Permanent Delete"
-										>
-											<svg
-												class="h-4.5 w-4.5"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
+								{#if data.user.role === 'admin' || instances.some(i => i.permissions?.power)}
+									<td class="px-8 py-4">
+										<div class="flex items-center justify-center gap-3">
+											{#if data.user.role === 'admin' || inst.permissions?.power}
+												<button
+													onclick={() => performAction(inst.id, 'start')}
+													disabled={inst.status === 'running' || inst.status === 'loading'}
+													class="flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 transition-all hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+													title="Start Instance"
+												>
+													<svg class="h-4.5 w-4.5" fill="currentColor" viewBox="0 0 20 20">
+														<path
+															d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z"
+														/>
+													</svg>
+												</button>
+												<button
+													onclick={() => performAction(inst.id, 'stop')}
+													disabled={inst.status === 'stopped' || inst.status === 'loading'}
+													class="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-500 transition-all hover:bg-amber-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+													title="Stop Instance"
+												>
+													<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+														<path d="M5 5h10v10H5z" />
+													</svg>
+												</button>
+											{:else}
+												<div class="h-9 w-20"></div> <!-- Placeholder to keep alignment -->
+											{/if}
+										</div>
+									</td>
+								{/if}
+								{#if data.user.role === 'admin' || instances.some(i => i.permissions?.delete)}
+									<td class="px-8 py-4 text-right">
+										{#if data.user.role === 'admin' || inst.permissions?.delete}
+											<button
+												onclick={() => deleteInstance(inst.id)}
+												disabled={inst.status !== 'stopped' && inst.sync_status !== 'orphaned'}
+												class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+												title={inst.status !== 'stopped' && inst.sync_status !== 'orphaned' ? "Only stopped or orphaned instances can be deleted" : "Permanent Delete"}
 											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-												/>
-											</svg>
-										</button>
-									{/if}
-								</td>
+												<svg
+													class="h-4.5 w-4.5"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													<path
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														stroke-width="2"
+														d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+													/>
+												</svg>
+											</button>
+										{:else}
+											<div class="h-9 w-9"></div>
+										{/if}
+									</td>
+								{/if}
 							</tr>
 						{/each}
 					</tbody>
@@ -742,8 +774,22 @@
 </div>
 
 <ConfirmDialog {...confirmState} />
+<InstanceDeleteModal 
+	{...deleteModalState} 
+	onCancel={() => deleteModalState.isOpen = false}
+	onConfirm={async (keepGroupIds) => {
+		const ids = deleteModalState.instanceIds;
+		deleteModalState.isOpen = false;
+		
+		if (ids.length === 1) {
+			await doDelete(ids[0], keepGroupIds, false);
+		} else {
+			await finalizeBatchDelete(ids, keepGroupIds);
+		}
+	}}
+/>
 {#if data.user.role === 'admin'}
-	<ActionQueue />
+	<ActionQueue isExpanded={false} />
 {/if}
 
 <style>

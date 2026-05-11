@@ -49,6 +49,14 @@
             >
                 Users
             </a>
+            <a
+                href="/mgmt/groups"
+                class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname.startsWith('/mgmt/groups')
+                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'}"
+            >
+                Groups
+            </a>
             {/if}
             <a
                 href="/console"
@@ -73,6 +81,12 @@
                 class="text-xs font-bold uppercase tracking-widest {pathname.startsWith('/mgmt/users')
                     ? 'text-rose-500'
                     : 'text-gray-500'}">Users</a
+            >
+            <a
+                href="/mgmt/groups"
+                class="text-xs font-bold uppercase tracking-widest {pathname.startsWith('/mgmt/groups')
+                    ? 'text-amber-500'
+                    : 'text-gray-500'}">Groups</a
             >
             {/if}
             <a

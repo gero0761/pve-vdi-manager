@@ -87,12 +87,6 @@ export async function POST({ params, request, locals }) {
 		return json({ error: 'Instance not found' }, { status: 404 });
 	}
 
-	// Access Check
-	if (user.role !== 'admin') {
-		const hasAccess = await db.hasInstanceAccess(user.id, instance.id);
-		if (!hasAccess) return json({ error: 'Forbidden' }, { status: 403 });
-	}
-
 	if (!['stop', 'start', 'shutdown'].includes(action)) {
 		return json({ error: 'Invalid action' }, { status: 400 });
 	}
@@ -109,15 +103,14 @@ export async function POST({ params, request, locals }) {
 }
 
 // DELETE /api/pve/instances/[id] -> Delete from Proxmox and DB
-export async function DELETE({ params, locals }) {
+export async function DELETE({ params, request, locals }) {
 	const { id } = params;
 	const user = locals.user;
 	if (!user) return json({ error: 'Unauthorized' }, { status: 401 });
 
-	// Delete is ADMIN ONLY
-	if (user.role !== 'admin') {
-		return json({ error: 'Forbidden' }, { status: 403 });
-	}
+	// Optional: keepGroupIds from body (if provided by custom modal)
+	const body = await request.json().catch(() => ({}));
+	const keepGroupIds = body.keepGroupIds || [];
 
 	const instance = await db.getInstanceById(id);
 
@@ -147,8 +140,45 @@ export async function DELETE({ params, locals }) {
 			});
 		}
 
-		// 3. Delete from DB
+		// 3. Get candidate groups for cleanup before deletion
+		const perms = await db.getInstancePermissions(id);
+		const candidateGroupIds = [...new Set(perms.map((p) => p.group_id))];
+
+		// 4. Delete from DB (this cascades to instance_permissions)
 		await db.deleteInstance(id);
+
+		// 5. Cleanup orphaned groups
+		for (const groupId of candidateGroupIds) {
+			if (keepGroupIds.includes(groupId)) {
+				console.log(`Skipping auto-cleanup for group ${groupId} as requested by user.`);
+				continue;
+			}
+
+			const group = await db.getGroupById(groupId);
+			if (!group || group.protected === 1) continue;
+
+			// Check if group has permissions for OTHER instances
+			const remainingPerms = await db.getPermissionsByGroup(groupId);
+			if (remainingPerms.length > 0) continue;
+
+			// Check if group is a sub-group of another group (has parents)
+			// We DON'T block deletion if it has children (e.g. an Admin group is member of this group)
+			const parents = await db.getGroupsWhereMember(groupId, 'group');
+			if (parents.length > 0) continue;
+
+			// Heuristic: Only auto-delete if it looks like a wizard-created group
+			// Wizard groups follow "Type: VMID" pattern and have a specific description
+			const isWizardPattern = /: \d+$/.test(group.name) || group.description.includes('Automated');
+			if (!isWizardPattern) continue;
+
+			// If it was a dedicated flat group for this instance, delete it
+			try {
+				await db.deleteGroup(groupId);
+				console.log(`Auto-cleaned orphaned group: ${group.name} (${groupId})`);
+			} catch (e) {
+				console.error(`Failed to auto-clean group ${groupId}:`, e);
+			}
+		}
 
 		return json({ success: true });
 	} catch (err) {

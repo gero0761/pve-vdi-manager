@@ -10,9 +10,24 @@ export async function GET({ locals }) {
 
 		let instances;
 		if (user.role === 'admin') {
-			instances = await db.getAllInstances();
+			instances = (await db.getAllInstances()).map(i => ({
+                ...i,
+                permissions: {
+                    power: true,
+                    delete: true,
+                    console: true
+                }
+            }));
 		} else {
-			instances = await db.getUserInstances(user.id);
+			const rawInstances = await db.getUserInstances(user.id);
+            instances = await Promise.all(rawInstances.map(async i => ({
+                ...i,
+                permissions: {
+                    power: await db.hasInstanceAccess(user.id, i.id, 'power'),
+                    delete: await db.hasInstanceAccess(user.id, i.id, 'delete'),
+                    console: await db.hasInstanceAccess(user.id, i.id, 'console')
+                }
+            })));
 		}
 		
 		return json({ instances });

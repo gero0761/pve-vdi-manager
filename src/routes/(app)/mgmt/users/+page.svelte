@@ -50,7 +50,9 @@
 						<tr class="transition-all hover:bg-white/2">
 							<td class="px-8 py-4">
 								<div class="flex flex-col">
-									<span class="font-bold text-gray-200">{user.username} <span class="ml-2 font-normal text-gray-500">({user.first_name} {user.last_name})</span></span>
+									<a href="/mgmt/users/{user.id}" class="font-bold text-gray-200 hover:text-indigo-400 transition-colors">
+										{user.username} <span class="ml-2 font-normal text-gray-500">({user.first_name} {user.last_name})</span>
+									</a>
 									<span class="text-xs text-gray-500 font-mono">{user.id}</span>
 								</div>
 							</td>

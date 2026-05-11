@@ -1,4 +1,4 @@
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, error, type Handle } from '@sveltejs/kit';
 import { handleLoginRedirect } from '$lib/AuthenticationHandler';
 import { db } from '$lib/server/db';
 import { dev } from '$app/environment';
@@ -71,6 +71,37 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	if (isAdminRoute && event.locals.user?.role !== 'admin') {
 		throw redirect(303, '/');
+	}
+
+	// Instance-level granular permission checks
+	if (event.locals.user && event.locals.user.role !== 'admin') {
+		const pathname = event.url.pathname;
+		const method = event.request.method;
+
+		// 1. API Actions (Power/Delete)
+		const instanceMatch = pathname.match(/^\/api\/pve\/instances\/([a-z0-9-]+)$/);
+		if (instanceMatch) {
+			const instanceId = instanceMatch[1];
+			if (method === 'DELETE') {
+				const hasAccess = await db.hasInstanceAccess(event.locals.user.id, instanceId, 'delete');
+				if (!hasAccess) throw error(403, 'Forbidden: Missing delete permission');
+			} else if (method === 'POST') {
+				const hasAccess = await db.hasInstanceAccess(event.locals.user.id, instanceId, 'power');
+				if (!hasAccess) throw error(403, 'Forbidden: Missing power permission');
+			}
+		}
+
+		// 2. Console Access (VNC API and Console Viewer)
+		const vncMatch = pathname.match(/^\/api\/vnc\/([a-z0-9-]+)$/);
+		const viewerMatch = pathname.match(/^\/console-viewer\/([a-z0-9-]+)$/);
+		const consoleId = vncMatch ? vncMatch[1] : (viewerMatch ? viewerMatch[1] : null);
+
+		if (consoleId) {
+			const hasAccess = await db.hasInstanceAccess(event.locals.user.id, consoleId, 'console');
+			if (!hasAccess) throw error(403, 'Forbidden: Missing console permission');
+		}
+
+		// 3. The rest is checked on the respective pages
 	}
 
 	const response = await resolve(event);

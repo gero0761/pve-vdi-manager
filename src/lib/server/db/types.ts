@@ -23,9 +23,29 @@ export interface Session {
 	expires_at: Date;
 }
 
-export interface UserInstanceAccess {
-	user_id: string;
+export interface UserGroup {
+	id: string;
+	name: string;
+	description: string;
+	protected?: number;
+}
+
+export interface GroupMember {
+	group_id: string;
+	member_id: string;
+	member_type: 'user' | 'group';
+}
+
+export interface PermissionType {
+	id: number;
+	name: string;
+	description: string;
+}
+
+export interface InstancePermission {
+	group_id: string;
 	instance_id: string;
+	permission_type_id: number;
 }
 
 export interface DatabaseAdapter {
@@ -48,9 +68,30 @@ export interface DatabaseAdapter {
 	getSessionById(id: string): Promise<Session | undefined>;
 	deleteSession(id: string): Promise<void>;
 
+	// Group Management
+	addGroup(group: UserGroup): Promise<void>;
+	deleteGroup(id: string): Promise<void>;
+	updateGroup(id: string, group: Partial<UserGroup>): Promise<void>;
+	getAllGroups(): Promise<UserGroup[]>;
+	getGroupById(id: string): Promise<UserGroup | undefined>;
+
+	// Membership Management
+	addMemberToGroup(groupId: string, memberId: string, memberType: 'user' | 'group'): Promise<void>;
+	removeMemberFromGroup(groupId: string, memberId: string): Promise<void>;
+	getGroupMembers(groupId: string): Promise<GroupMember[]>;
+	getUserGroups(userId: string): Promise<UserGroup[]>;
+    getGroupsWhereMember(memberId: string, memberType: 'user' | 'group'): Promise<UserGroup[]>;
+
+	// Permission Management
+	getAllPermissionTypes(): Promise<PermissionType[]>;
+	getPermissionTypeByName(name: string): Promise<PermissionType | undefined>;
+	grantPermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void>;
+	revokePermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void>;
+	getInstancePermissions(instanceId: string): Promise<InstancePermission[]>;
+	getPermissionsByGroup(groupId: string): Promise<InstancePermission[]>;
+	
 	// Access Management
-	assignInstanceToUser(userId: string, instanceId: string): Promise<void>;
-	removeInstanceFromUser(userId: string, instanceId: string): Promise<void>;
+	getUserGroupIds(userId: string): Promise<string[]>;
 	getUserInstances(userId: string): Promise<VDIInstance[]>;
-	hasInstanceAccess(userId: string, instanceId: string): Promise<boolean>;
+	hasInstanceAccess(userId: string, instanceId: string, permissionName?: string): Promise<boolean>;
 }

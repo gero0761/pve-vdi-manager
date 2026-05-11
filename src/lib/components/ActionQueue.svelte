@@ -3,7 +3,7 @@
 	import { taskQueue } from '$lib/stores/queue';
 	import { fade, slide } from 'svelte/transition';
 
-	let isExpanded = $state(true);
+	let { isExpanded = true } = $props();
 
 	onMount(() => {
 		taskQueue.startPolling();
