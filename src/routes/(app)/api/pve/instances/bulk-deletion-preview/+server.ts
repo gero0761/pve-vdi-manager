@@ -32,12 +32,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		for (const groupId of candidateGroupIds) {
 			if (allCandidateGroups.has(groupId)) continue;
 
-			const group = await db.getGroupById(groupId);
-			if (!group || group.protected === 1) continue;
+			const group = await db.getGroupDetailedById(groupId);
+			if (!group || group.type?.is_protected) continue;
 
 			// Check if group has permissions for instances OUTSIDE of the deletion list
 			const allPerms = await db.getPermissionsByGroup(groupId);
-			const hasExternalInstances = allPerms.some((p: any) => !instanceIds.includes(p.instance_id));
+			const hasExternalInstances = allPerms.some((p) => !instanceIds.includes(p.instance_id));
 			if (hasExternalInstances) continue;
 
 			// Check if it's a sub-group (has parent groups)

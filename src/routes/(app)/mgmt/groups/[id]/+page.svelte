@@ -1,7 +1,24 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import SpinningCircle from '$lib/components/SpinningCircle.svelte';
-	let { data, form } = $props();
+	import type { UserGroup, GroupType, GroupMember, User, VDIInstance, PermissionType, InstancePermission } from '$lib/server/db/types';
+
+	interface Props {
+		data: {
+			group: UserGroup & { type: GroupType };
+			members: GroupMember[];
+			parentGroups: UserGroup[];
+			allUsers: User[];
+			allGroups: (UserGroup & { type: GroupType })[];
+			allInstances: VDIInstance[];
+			permissionTypes: PermissionType[];
+			groupPerms: (InstancePermission & { instance_vmid: number; permission_name: string; isProtected: boolean })[];
+			availableParents: (UserGroup & { type: GroupType })[];
+		};
+		form: any;
+	}
+
+	let { data, form }: Props = $props();
 
 	let activeTab = $state<'members' | 'permissions'>('members');
 	let processingParentId = $state<string | null>(null);
@@ -11,6 +28,15 @@
 	let isAddingMember = $state(false);
 	let isGrantingPermission = $state(false);
 	let isAddingToGroup = $state(false);
+
+	const typeStyles: Record<number, string> = {
+		0: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+		1: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+		2: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+		3: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+		4: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+		5: 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+	};
 </script>
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -23,11 +49,11 @@
 				<h1 class="text-3xl font-extrabold tracking-tight text-white">{data.group.name}</h1>
 				<p class="mt-2 text-sm text-gray-400">{data.group.description || 'No description'}</p>
 			</div>
-			{#if data.isProtectedGroup}
-				<span class="rounded-full bg-blue-500/10 px-4 py-1.5 text-xs font-black uppercase tracking-widest text-blue-400 border border-blue-500/20">
-					Protected Access Group
+			<div class="flex flex-col items-end gap-2">
+				<span class="rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-widest border {typeStyles[data.group.type_id] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}">
+					{data.group.type?.name || 'Unknown'}
 				</span>
-			{/if}
+			</div>
 		</div>
 	</div>
 
@@ -51,13 +77,13 @@
 				}} class="space-y-4">
 					<div class="space-y-2">
 						<label for="name" class="block text-[10px] font-black uppercase tracking-widest text-gray-500">Name</label>
-						<input type="text" id="name" name="name" value={data.group.name} required disabled={data.isProtectedGroup || isSavingSettings} class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-sm text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:opacity-50" />
+						<input type="text" id="name" name="name" value={data.group.name} required disabled={data.group.type?.is_protected || isSavingSettings} class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-sm text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:opacity-50" />
 					</div>
 					<div class="space-y-2">
 						<label for="description" class="block text-[10px] font-black uppercase tracking-widest text-gray-500">Description</label>
-						<textarea id="description" name="description" rows="3" disabled={data.isProtectedGroup || isSavingSettings} class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-sm text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:opacity-50">{data.group.description || ''}</textarea>
+						<textarea id="description" name="description" rows="3" disabled={data.group.type?.is_protected || isSavingSettings} class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-sm text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:opacity-50">{data.group.description || ''}</textarea>
 					</div>
-					{#if !data.isProtectedGroup}
+					{#if !data.group.type?.is_protected}
 						<button type="submit" disabled={isSavingSettings} class="w-full rounded-xl bg-amber-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-amber-600/20 hover:bg-amber-500 transition-all disabled:opacity-50 flex justify-center items-center gap-2">
 							{#if isSavingSettings}
 								<SpinningCircle size="h-4 w-4" color="text-white" />
@@ -67,7 +93,7 @@
 							{/if}
 						</button>
 					{:else}
-						<p class="text-[10px] text-gray-500 italic text-center">Protected groups cannot be renamed.</p>
+						<p class="text-[10px] text-gray-500 italic text-center">Protected groups cannot be modified.</p>
 					{/if}
 				</form>
 			</section>
@@ -137,7 +163,7 @@
 								</div>
 							{/each}
 						</div>
-                        {#if !data.isProtectedGroup && data.availableParents.length > 0}
+                        {#if !data.group.type?.is_protected && data.availableParents.length > 0}
                             <div class="bg-gray-900/30 px-6 py-4 border-t border-gray-700">
                                 <form method="POST" action="?/addToGroup" use:enhance={() => {
 									isAddingToGroup = true;
@@ -230,9 +256,9 @@
 										await update();
 									};
 								}} class="space-y-3">
-                                    <label class="text-[10px] font-black uppercase tracking-widest text-blue-400">Add User Member</label>
+                                    <label class="text-[10px] font-black uppercase tracking-widest text-blue-400" for="addUserSelect">Add User Member</label>
                                     <div class="flex gap-2">
-                                        <select name="memberId" required disabled={isAddingMember} class="flex-1 rounded-lg border-gray-700 bg-gray-900 text-xs text-gray-200 focus:border-blue-500 disabled:opacity-50">
+                                        <select id="addUserSelect" name="memberId" required disabled={isAddingMember} class="flex-1 rounded-lg border-gray-700 bg-gray-900 text-xs text-gray-200 focus:border-blue-500 disabled:opacity-50">
                                             <option value="" disabled selected>Select User...</option>
                                             {#each data.allUsers.filter(u => !data.members.some(m => m.member_id === u.id)) as user (user.id)}
                                                 <option value={user.id}>{user.username}</option>
@@ -250,17 +276,17 @@
                                 </form>
 
                                 <form method="POST" action="?/addMember" use:enhance={() => {
-									isAddingMember = true; // Reusing same state for both member adds is fine or I could separate
+									isAddingMember = true;
 									return async ({ update }) => {
 										isAddingMember = false;
 										await update();
 									};
 								}} class="space-y-3">
-                                    <label class="text-[10px] font-black uppercase tracking-widest text-amber-400">Add Group Member</label>
+                                    <label class="text-[10px] font-black uppercase tracking-widest text-amber-400" for="addGroupSelect">Add Group Member</label>
                                     <div class="flex gap-2">
-                                        <select name="memberId" required disabled={isAddingMember} class="flex-1 rounded-lg border-gray-700 bg-gray-900 text-xs text-gray-200 focus:border-amber-500 disabled:opacity-50">
+                                        <select id="addGroupSelect" name="memberId" required disabled={isAddingMember} class="flex-1 rounded-lg border-gray-700 bg-gray-900 text-xs text-gray-200 focus:border-amber-500 disabled:opacity-50">
                                             <option value="" disabled selected>Select Group...</option>
-                                            {#each data.allGroups.filter(g => !data.members.some(m => m.member_id === g.id)) as group (group.id)}
+                                            {#each data.allGroups.filter(g => g.id !== data.group.id && !data.members.some(m => m.member_id === g.id)) as group (group.id)}
                                                 <option value={group.id}>{group.name}</option>
                                             {/each}
                                         </select>
@@ -342,16 +368,16 @@
 							};
 						}} class="flex flex-wrap items-end gap-4">
 							<div class="flex-1 min-w-[200px] space-y-2">
-								<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500">Select Instance</label>
-								<select name="instanceId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
+								<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500" for="grantInstanceSelect">Select Instance</label>
+								<select id="grantInstanceSelect" name="instanceId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
 									{#each data.allInstances as inst (inst.id)}
 										<option value={inst.id}>VM {inst.vmid} ({inst.node})</option>
 									{/each}
 								</select>
 							</div>
 							<div class="flex-1 min-w-[150px] space-y-2">
-								<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500">Permission Type</label>
-								<select name="permissionTypeId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
+								<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500" for="grantTypeSelect">Permission Type</label>
+								<select id="grantTypeSelect" name="permissionTypeId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
 									{#each data.permissionTypes as type (type.id)}
 										<option value={type.id}>{type.name} - {type.description}</option>
 									{/each}

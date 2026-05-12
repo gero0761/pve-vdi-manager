@@ -7,18 +7,18 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		throw error(403, 'Forbidden');
 	}
 
-	const group = await db.getGroupById(params.id);
+	const group = await db.getGroupDetailedById(params.id);
 	if (!group) throw error(404, 'Group not found');
 
 	const members = await db.getGroupMembers(params.id);
     const parentGroups = await db.getGroupsWhereMember(params.id, 'group');
 	const allUsers = await db.getAllUsers();
-	const allGroups = await db.getAllGroups();
+	const allGroups = await db.getAllGroupsDetailed();
 	const allInstances = await db.getAllInstances();
 	const permissionTypes = await db.getAllPermissionTypes();
 	
     const groupPerms = [];
-    const isProtectedGroup = group.protected === 1;
+    const isProtectedGroup = group.type_id === 1;
 
     for(const inst of allInstances) {
         const perms = await db.getInstancePermissions(inst.id);
@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     }
 
     // Available groups to be added TO (parents)
-    // Rule: Cannot add a protected group to another group
+    // Rule: Cannot add a system group to another group
     const availableParents = isProtectedGroup ? [] : allGroups.filter(
         g => g.id !== group.id && !parentGroups.some(pg => pg.id === g.id)
     );
@@ -46,7 +46,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
         parentGroups,
 		allUsers,
 		// Groups that can be added AS MEMBERS (children)
-		allGroups: allGroups.filter(g => g.id !== group.id && g.protected !== 1),
+		allGroups: allGroups.filter(g => g.id !== group.id && g.type_id !== 1),
 		allInstances,
 		permissionTypes,
 		groupPerms,
@@ -64,8 +64,8 @@ export const actions: Actions = {
 		if (!name) return fail(400, { error: 'Name is required' });
 
         const group = await db.getGroupById(params.id);
-        if (group?.protected) {
-            return fail(400, { error: 'Cannot update a protected access group.' });
+        if (group?.type_id === 1) {
+            return fail(400, { error: 'Cannot update a system access group.' });
         }
 
 		try {

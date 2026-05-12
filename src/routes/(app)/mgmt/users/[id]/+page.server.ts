@@ -55,8 +55,14 @@ export const load: PageServerLoad = async ({ params, locals }) => {
         });
     }
 
+	const targetGroupIds = await db.getGroupMembers("system-admin");
+	const targetUserWithRole = {
+		...user,
+		role: targetGroupIds.map(g => g.member_id).includes(user.id) ? 'admin' : 'user'
+	};
+
 	return {
-		targetUser: user,
+		targetUser: targetUserWithRole,
 		userGroups,
 		availableGroups,
 		instanceWithSources

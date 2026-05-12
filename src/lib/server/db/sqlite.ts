@@ -1,15 +1,15 @@
 import Database from 'better-sqlite3';
 import { env } from '$env/dynamic/private';
-import type { DatabaseAdapter, VDIInstance, UserGroup, GroupMember, PermissionType, InstancePermission } from './types';
+import type { DatabaseAdapter, VDIInstance, UserGroup, GroupMember, PermissionType, InstancePermission, GroupType, User } from './types';
 import crypto from 'node:crypto';
 
-const { DB_TYPE } = env;
+const { DB_TYPE, DB_PATH } = env;
 
 let db: Database.Database;
 
-if (DB_TYPE !== 'mysql') {
-	db = new Database('data.db');
-	db.pragma('journal_mode = WAL');
+if (DB_TYPE === 'sqlite') {
+	db = new Database(DB_PATH || 'vdi-sqlite.db');
+	db.pragma('foreign_keys = ON');
 
 	// Initialize schema
 	db.exec(`
@@ -20,40 +20,60 @@ if (DB_TYPE !== 'mysql') {
 			node TEXT NOT NULL,
 			created_at DATETIME NOT NULL,
 			sync_status TEXT DEFAULT 'synced'
-		);
+		)
+	`);
+	db.exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			id TEXT PRIMARY KEY,
 			username TEXT UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
 			first_name TEXT NOT NULL,
-			last_name TEXT NOT NULL,
-			role TEXT DEFAULT 'user' NOT NULL
-		);
+			last_name TEXT NOT NULL
+		)
+	`);
+	db.exec(`
 		CREATE TABLE IF NOT EXISTS sessions (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
 			created_at DATETIME NOT NULL,
 			expires_at DATETIME NOT NULL,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-		);
+		)
+	`);
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS group_types (
+			id INTEGER PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			is_protected INTEGER NOT NULL DEFAULT 0,
+			description TEXT
+		)
+	`);
+	db.exec(`
 		CREATE TABLE IF NOT EXISTS groups (
 			id TEXT PRIMARY KEY,
 			name TEXT UNIQUE NOT NULL,
+			type_id INTEGER NOT NULL,
 			description TEXT,
-			"protected" INTEGER DEFAULT 0
-		);
+			FOREIGN KEY (type_id) REFERENCES group_types(id) ON DELETE RESTRICT
+		)
+	`);
+	db.exec(`
 		CREATE TABLE IF NOT EXISTS group_members (
 			group_id TEXT NOT NULL,
 			member_id TEXT NOT NULL,
-			member_type TEXT NOT NULL, -- 'user' or 'group'
+			member_type TEXT NOT NULL,
 			PRIMARY KEY (group_id, member_id),
 			FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
-		);
+		)
+	`);
+	db.exec(`
 		CREATE TABLE IF NOT EXISTS permission_types (
 			id INTEGER PRIMARY KEY,
 			name TEXT UNIQUE NOT NULL,
 			description TEXT
-		);
+		)
+	`);
+	db.exec(`
 		CREATE TABLE IF NOT EXISTS instance_permissions (
 			group_id TEXT NOT NULL,
 			instance_id TEXT NOT NULL,
@@ -62,216 +82,270 @@ if (DB_TYPE !== 'mysql') {
 			FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
 			FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE,
 			FOREIGN KEY (permission_type_id) REFERENCES permission_types(id) ON DELETE CASCADE
-		);
+		)
 	`);
 
-    // Migration: Ensure UNIQUE constraint on groups(name) for existing DBs
-    try {
-        db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_name ON groups(name)');
-    } catch (e) { /* Ignore */ }
+	// Initialize default group types
+	const insertType = db.prepare('INSERT OR IGNORE INTO group_types (id, name, description, is_protected) VALUES (?, ?, ?, ?)');
+	insertType.run(0, 'System', 'System group automatically created and managed by the system.', 1);
+	insertType.run(1, 'System Role', 'Group that defines system roles.', 1);
+	insertType.run(2, 'Base Permission', 'Group that grants base permissions to instances.', 1);
+	insertType.run(3, 'Role', 'Custom role that is assigned to users.', 0);
+	insertType.run(4, 'Custom Permission', 'Custom permission that is assigned to instances.', 0);
+	insertType.run(5, 'Other', 'Other groups.', 0);
 
-	// Migration: Handle rename from is_system/is_protected to "protected"
-	try {
-		db.exec('ALTER TABLE groups RENAME COLUMN is_system TO "protected"');
-	} catch (e) { /* Ignore if it fails */ }
-    try {
-		db.exec('ALTER TABLE groups RENAME COLUMN is_protected TO "protected"');
-	} catch (e) { /* Ignore if it fails */ }
-	try {
-		db.exec('ALTER TABLE groups ADD COLUMN "protected" INTEGER DEFAULT 0');
-	} catch (e) { /* Column already exists */ }
+	// Initialize System Role Groups
+	const insertGroup = db.prepare('INSERT OR IGNORE INTO groups (id, name, type_id, description) VALUES (?, ?, ?, ?)');
+	insertGroup.run('system-admin', 'Admin', 1, 'Default administrators group with full system access.');
+	insertGroup.run('system-user', 'User', 1, 'Default users group.');
 
-	// Migration: Mark existing Access: * groups as protected groups
-	db.exec("UPDATE groups SET \"protected\" = 1 WHERE name LIKE 'Access: %'");
+	// Note: Role column is removed. Migration should have been handled in previous versions.
 
 	// Initialize default permission types
-	db.exec(`
-		INSERT OR IGNORE INTO permission_types (id, name, description) VALUES 
-		(1, 'all', 'Full access'),
-		(2, 'console', 'Console access only'),
-		(3, 'power', 'Start/Stop/Reboot access'),
-		(4, 'delete', 'Allow instance deletion');
-	`);
-	
-	// Cleanup old tables if they exist
-	try {
-		db.exec('DROP TABLE IF EXISTS group_instances');
-		db.exec('DROP TABLE IF EXISTS user_instances');
-	} catch (e) { /* Ignore */ }
+	const insertPerm = db.prepare('INSERT OR IGNORE INTO permission_types (id, name, description) VALUES (?, ?, ?)');
+	insertPerm.run(1, 'all', 'Full access');
+	insertPerm.run(2, 'console', 'Console access only');
+	insertPerm.run(3, 'power', 'Start/Stop/Reboot access');
+	insertPerm.run(4, 'delete', 'Allow instance deletion');
 }
 
 export const sqliteAdapter: DatabaseAdapter = {
-	async getInstanceById(id: string): Promise<VDIInstance | undefined> {
-		const stmt = db.prepare('SELECT * FROM instances WHERE id = ?');
-		return stmt.get(id) as VDIInstance | undefined;
+	getInstanceById(id: string): Promise<VDIInstance | undefined> {
+		return Promise.resolve(db.prepare('SELECT * FROM instances WHERE id = ?').get(id) as VDIInstance | undefined);
 	},
-	async createInstance(instance: VDIInstance): Promise<void> {
+	createInstance(instance: VDIInstance): Promise<void> {
 		const transaction = db.transaction(() => {
-			// 1. Create instance
-			const stmtInstance = db.prepare(
+			db.prepare(
 				'INSERT INTO instances (id, vmid, type, node, created_at, sync_status) VALUES (?, ?, ?, ?, ?, ?)'
-			);
-			stmtInstance.run(
+			).run(
 				instance.id,
 				instance.vmid,
 				instance.type,
 				instance.node,
-				instance.created_at.toISOString(),
+				instance.created_at,
 				instance.sync_status || 'synced'
 			);
 
-			// 2. Create automatic access group
 			const groupId = crypto.randomUUID();
-			const stmtGroup = db.prepare('INSERT INTO groups (id, name, description, "protected") VALUES (?, ?, ?, 1)');
-			stmtGroup.run(groupId, `Access: ${instance.vmid}`, `Default access group for instance ${instance.vmid}`);
+			db.prepare('INSERT INTO groups (id, name, description, type_id) VALUES (?, ?, ?, 0)').run(
+				groupId,
+				`Access: ${instance.vmid}`,
+				`Default access group for instance ${instance.vmid}`
+			);
 
-			// 3. Grant 'all' permission (ID 1)
-			const stmtPerm = db.prepare('INSERT INTO instance_permissions (group_id, instance_id, permission_type_id) VALUES (?, ?, ?)');
-			stmtPerm.run(groupId, instance.id, 1);
+			db.prepare('INSERT INTO instance_permissions (group_id, instance_id, permission_type_id) VALUES (?, ?, ?)').run(
+				groupId,
+				instance.id,
+				1
+			);
 		});
-
 		transaction();
+		return Promise.resolve();
 	},
-	async deleteInstance(id: string): Promise<void> {
+	deleteInstance(id: string): Promise<void> {
+		// Find all protected groups linked to this instance (System groups, type_id=0)
+		const linkedGroups = db.prepare(`
+			SELECT DISTINCT g.id FROM groups g
+			JOIN group_types gt ON g.type_id = gt.id
+			JOIN instance_permissions ip ON g.id = ip.group_id
+			WHERE ip.instance_id = ? AND gt.is_protected = 1
+		`).all(id) as { id: string }[];
+
 		const transaction = db.transaction(() => {
-            // Find all protected groups linked to this instance (not just 'all' perms)
-            const linkedGroups = db.prepare(`
-                SELECT DISTINCT g.id FROM groups g
-                JOIN instance_permissions ip ON g.id = ip.group_id
-                WHERE ip.instance_id = ? AND g."protected" = 1
-            `).all(id) as { id: string }[];
-
-            // Delete the instance first (cascades perms)
-            db.prepare('DELETE FROM instances WHERE id = ?').run(id);
-
-            // Delete the linked protected groups
-            for (const g of linkedGroups) {
-                db.prepare('DELETE FROM groups WHERE id = ?').run(g.id);
-            }
-        });
-        transaction();
+			db.prepare('DELETE FROM instances WHERE id = ?').run(id);
+			for (const g of linkedGroups) {
+				db.prepare('DELETE FROM groups WHERE id = ?').run(g.id);
+			}
+		});
+		transaction();
+		return Promise.resolve();
 	},
-	async getAllInstances(): Promise<VDIInstance[]> {
-		const stmt = db.prepare('SELECT * FROM instances ORDER BY vmid ASC');
-		return stmt.all() as VDIInstance[];
+	getAllInstances(): Promise<VDIInstance[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM instances ORDER BY vmid ASC').all() as VDIInstance[]);
 	},
-	async updateInstanceSyncStatus(id: string, status: string): Promise<void> {
-		const stmt = db.prepare('UPDATE instances SET sync_status = ? WHERE id = ?');
-		stmt.run(status, id);
+	updateInstanceSyncStatus(id: string, status: string): Promise<void> {
+		db.prepare('UPDATE instances SET sync_status = ? WHERE id = ?').run(status, id);
+		return Promise.resolve();
 	},
 
 	// User Management
-	async getUserByUsername(username: string): Promise<import('./types').User | undefined> {
-		const stmt = db.prepare('SELECT * FROM users WHERE username = ?');
-		return stmt.get(username) as import('./types').User | undefined;
+	getUserByUsername(username: string): Promise<User | undefined> {
+		return Promise.resolve(db.prepare('SELECT * FROM users WHERE username = ?').get(username) as User | undefined);
 	},
-	async getUserById(id: string): Promise<import('./types').User | undefined> {
-		const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
-		return stmt.get(id) as import('./types').User | undefined;
+	getUserById(id: string): Promise<User | undefined> {
+		return Promise.resolve(db.prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined);
 	},
-	async createUser(user: import('./types').User): Promise<void> {
-		const stmt = db.prepare(
-			'INSERT INTO users (id, username, password_hash, first_name, last_name, role) VALUES (?, ?, ?, ?, ?, ?)'
-		);
-		stmt.run(
+	createUser(user: User): Promise<void> {
+		db.prepare(
+			'INSERT INTO users (id, username, password_hash, first_name, last_name) VALUES (?, ?, ?, ?, ?)'
+		).run(
 			user.id,
 			user.username,
 			user.password_hash,
 			user.first_name,
-			user.last_name,
-			user.role || 'user'
+			user.last_name
 		);
+		// Add to system-user group by default
+		this.addMemberToGroup('system-user', user.id, 'user');
+		return Promise.resolve();
 	},
-	async getAllUsers(): Promise<import('./types').User[]> {
-		const stmt = db.prepare('SELECT * FROM users ORDER BY username ASC');
-		return stmt.all() as import('./types').User[];
+	getAllUsers(): Promise<User[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM users ORDER BY username ASC').all() as User[]);
 	},
-	async deleteUser(id: string): Promise<void> {
-		const stmt = db.prepare('DELETE FROM users WHERE id = ?');
-		stmt.run(id);
+	deleteUser(id: string): Promise<void> {
+		db.prepare('DELETE FROM users WHERE id = ?').run(id);
+		return Promise.resolve();
 	},
-	async updateUser(id: string, user: Partial<import('./types').User>): Promise<void> {
+	updateUser(id: string, user: Partial<User>): Promise<void> {
 		const fields = Object.keys(user).filter((k) => k !== 'id');
-		if (fields.length === 0) return;
+		if (fields.length === 0) return Promise.resolve();
 		const sets = fields.map((f) => `${f} = ?`).join(', ');
 		const values = fields.map((f) => (user as any)[f]);
-		const stmt = db.prepare(`UPDATE users SET ${sets} WHERE id = ?`);
-		stmt.run(...values, id);
+		db.prepare(`UPDATE users SET ${sets} WHERE id = ?`).run(...values, id);
+		return Promise.resolve();
 	},
 
 	// Session Management
-	async createSession(session: import('./types').Session): Promise<void> {
-		const stmt = db.prepare(
+	createSession(session: import('./types').Session): Promise<void> {
+		db.prepare(
 			'INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
-		);
-		stmt.run(
-			session.id,
-			session.user_id,
-			session.created_at.toISOString(),
-			session.expires_at.toISOString()
-		);
+		).run(session.id, session.user_id, session.created_at, session.expires_at);
+		return Promise.resolve();
 	},
-	async getSessionById(id: string): Promise<import('./types').Session | undefined> {
-		const stmt = db.prepare('SELECT * FROM sessions WHERE id = ?');
-		return stmt.get(id) as import('./types').Session | undefined;
+	getSessionById(id: string): Promise<import('./types').Session | undefined> {
+		return Promise.resolve(db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as import('./types').Session | undefined);
 	},
-	async deleteSession(id: string): Promise<void> {
-		const stmt = db.prepare('DELETE FROM sessions WHERE id = ?');
-		stmt.run(id);
+	deleteSession(id: string): Promise<void> {
+		db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+		return Promise.resolve();
 	},
 
 	// Group Management
-	async addGroup(group: UserGroup): Promise<void> {
-		const stmt = db.prepare('INSERT INTO groups (id, name, description, "protected") VALUES (?, ?, ?, ?)');
-		stmt.run(group.id, group.name, group.description, group.protected || 0);
+	addGroup(group: UserGroup): Promise<void> {
+		db.prepare('INSERT INTO groups (id, name, description, type_id) VALUES (?, ?, ?, ?)').run(
+			group.id, 
+			group.name, 
+			group.description, 
+			group.type_id !== undefined ? group.type_id : 3 // Default to Role
+		);
+		return Promise.resolve();
 	},
-	async deleteGroup(id: string): Promise<void> {
-		// Safeguard: Check if group is protected
-		const group = db.prepare('SELECT "protected" FROM groups WHERE id = ?').get(id) as { protected: number } | undefined;
-		if (group?.protected === 1) {
-			throw new Error('Cannot delete a protected access group.');
+	deleteGroup(id: string): Promise<void> {
+		const type = db.prepare(`
+			SELECT gt.is_protected 
+			FROM groups g 
+			JOIN group_types gt ON g.type_id = gt.id 
+			WHERE g.id = ?
+		`).get(id) as { is_protected: number } | undefined;
+		
+		if (type?.is_protected) {
+			throw new Error('Cannot delete a protected group.');
 		}
-		const stmt = db.prepare('DELETE FROM groups WHERE id = ?');
-		stmt.run(id);
+		db.prepare('DELETE FROM groups WHERE id = ?').run(id);
+		return Promise.resolve();
 	},
-	async updateGroup(id: string, group: Partial<UserGroup>): Promise<void> {
+	updateGroup(id: string, group: Partial<UserGroup>): Promise<void> {
 		const fields = Object.keys(group).filter((k) => k !== 'id');
-		if (fields.length === 0) return;
+		if (fields.length === 0) return Promise.resolve();
 		const sets = fields.map((f) => `"${f}" = ?`).join(', ');
 		const values = fields.map((f) => (group as any)[f]);
-		const stmt = db.prepare(`UPDATE groups SET ${sets} WHERE id = ?`);
-		stmt.run(...values, id);
+		db.prepare(`UPDATE groups SET ${sets} WHERE id = ?`).run(...values, id);
+		return Promise.resolve();
 	},
-	async getAllGroups(): Promise<UserGroup[]> {
-		const stmt = db.prepare('SELECT * FROM groups ORDER BY name ASC');
-		return stmt.all() as UserGroup[];
+	getAllGroups(): Promise<UserGroup[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM groups ORDER BY name ASC').all() as UserGroup[]);
 	},
-	async getGroupById(id: string): Promise<UserGroup | undefined> {
-		const stmt = db.prepare('SELECT * FROM groups WHERE id = ?');
-		return stmt.get(id) as UserGroup | undefined;
+	getAllGroupsDetailed(): Promise<(UserGroup & { type: GroupType })[]> {
+		const rows = db.prepare(`
+			SELECT g.*, gt.id AS gt_id, gt.name AS gt_name, gt.description AS gt_description, gt.is_protected AS gt_protected
+			FROM groups g
+			LEFT JOIN group_types gt ON g.type_id = gt.id
+			ORDER BY g.name ASC
+		`).all() as any[];
+		
+		return Promise.resolve(rows.map(row => ({
+			id: row.id,
+			name: row.name,
+			type_id: row.type_id,
+			description: row.description,
+			type: {
+				id: row.gt_id,
+				name: row.gt_name,
+				description: row.gt_description,
+				is_protected: !!row.gt_protected
+			}
+		})));
+	},
+	getGroupById(id: string): Promise<UserGroup | undefined> {
+		return Promise.resolve(db.prepare('SELECT * FROM groups WHERE id = ?').get(id) as UserGroup | undefined);
+	},
+	getGroupDetailedById(id: string): Promise<UserGroup & { type: GroupType } | undefined> {
+		const row = db.prepare(`
+			SELECT g.*, gt.id AS gt_id, gt.name AS gt_name, gt.description AS gt_description, gt.is_protected AS gt_protected
+			FROM groups g
+			LEFT JOIN group_types gt ON g.type_id = gt.id
+			WHERE g.id = ?
+		`).get(id) as any;
+		
+		if (!row) return Promise.resolve(undefined);
+		return Promise.resolve({
+			id: row.id,
+			name: row.name,
+			type_id: row.type_id,
+			description: row.description,
+			type: {
+				id: row.gt_id,
+				name: row.gt_name,
+				description: row.gt_description,
+				is_protected: !!row.gt_protected
+			}
+		});
+	},
+	getAllGroupTypes(): Promise<GroupType[]> {
+		const rows = db.prepare('SELECT * FROM group_types ORDER BY name ASC').all() as any[];
+		return Promise.resolve(rows.map(r => ({
+			id: r.id,
+			name: r.name,
+			description: r.description,
+			is_protected: !!r.is_protected
+		})));
+	},
+	getGroupTypeById(id: string): Promise<GroupType | undefined> {
+		const r = db.prepare('SELECT * FROM group_types WHERE id = ?').get(id) as any;
+		if (!r) return Promise.resolve(undefined);
+		return Promise.resolve({
+			id: r.id,
+			name: r.name,
+			description: r.description,
+			is_protected: !!r.is_protected
+		});
 	},
 
 	// Membership Management
-	async addMemberToGroup(groupId: string, memberId: string, memberType: 'user' | 'group'): Promise<void> {
+	addMemberToGroup(groupId: string, memberId: string, memberType: 'user' | 'group'): Promise<void> {
 		if (memberType === 'group') {
-			const memberGroup = db.prepare('SELECT "protected" FROM groups WHERE id = ?').get(memberId) as { protected: number } | undefined;
-			if (memberGroup?.protected === 1) {
-				throw new Error('Protected access groups cannot be added as members of other groups.');
+			const type = db.prepare(`
+				SELECT gt.is_protected 
+				FROM groups g 
+				JOIN group_types gt ON g.type_id = gt.id 
+				WHERE g.id = ?
+			`).get(memberId) as { is_protected: number } | undefined;
+			if (type?.is_protected) {
+				throw new Error('Protected groups cannot be added as members of other groups.');
 			}
 		}
-		const stmt = db.prepare('INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)');
-		stmt.run(groupId, memberId, memberType);
+		db.prepare('INSERT OR IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)').run(groupId, memberId, memberType);
+		return Promise.resolve();
 	},
-	async removeMemberFromGroup(groupId: string, memberId: string): Promise<void> {
-		const stmt = db.prepare('DELETE FROM group_members WHERE group_id = ? AND member_id = ?');
-		stmt.run(groupId, memberId);
+	removeMemberFromGroup(groupId: string, memberId: string): Promise<void> {
+		db.prepare('DELETE FROM group_members WHERE group_id = ? AND member_id = ?').run(groupId, memberId);
+		return Promise.resolve();
 	},
-	async getGroupMembers(groupId: string): Promise<GroupMember[]> {
-		const stmt = db.prepare('SELECT * FROM group_members WHERE group_id = ?');
-		return stmt.all(groupId) as GroupMember[];
+	getGroupMembers(groupId: string): Promise<GroupMember[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM group_members WHERE group_id = ?').all(groupId) as GroupMember[]);
 	},
-	async getUserGroups(userId: string): Promise<UserGroup[]> {
-		const stmt = db.prepare(`
+	getUserGroups(userId: string): Promise<UserGroup[]> {
+		const rows = db.prepare(`
 			WITH RECURSIVE user_groups_cte AS (
 				SELECT group_id FROM group_members WHERE member_id = ? AND member_type = 'user'
 				UNION
@@ -282,55 +356,53 @@ export const sqliteAdapter: DatabaseAdapter = {
 			)
 			SELECT g.* FROM groups g
 			JOIN user_groups_cte ugc ON g.id = ugc.group_id
-		`);
-		return stmt.all(userId) as UserGroup[];
+		`).all(userId) as UserGroup[];
+		return Promise.resolve(rows);
 	},
-    async getGroupsWhereMember(memberId: string, memberType: 'user' | 'group'): Promise<UserGroup[]> {
-        const stmt = db.prepare(`
-            SELECT g.* FROM groups g
-            JOIN group_members gm ON g.id = gm.group_id
-            WHERE gm.member_id = ? AND gm.member_type = ?
-        `);
-        return stmt.all(memberId, memberType) as UserGroup[];
-    },
+	getGroupsWhereMember(memberId: string, memberType: 'user' | 'group'): Promise<UserGroup[]> {
+		return Promise.resolve(db.prepare(`
+			SELECT g.* FROM groups g
+			JOIN group_members gm ON g.id = gm.group_id
+			WHERE gm.member_id = ? AND gm.member_type = ?
+		`).all(memberId, memberType) as UserGroup[]);
+	},
 
 	// Permission Management
-	async getAllPermissionTypes(): Promise<PermissionType[]> {
-		const stmt = db.prepare('SELECT * FROM permission_types ORDER BY id ASC');
-		return stmt.all() as PermissionType[];
+	getAllPermissionTypes(): Promise<PermissionType[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM permission_types ORDER BY id ASC').all() as PermissionType[]);
 	},
-	async getPermissionTypeByName(name: string): Promise<PermissionType | undefined> {
-		const stmt = db.prepare('SELECT * FROM permission_types WHERE name = ?');
-		return stmt.get(name) as PermissionType | undefined;
+	getPermissionTypeByName(name: string): Promise<PermissionType | undefined> {
+		return Promise.resolve(db.prepare('SELECT * FROM permission_types WHERE name = ?').get(name) as PermissionType | undefined);
 	},
-	async grantPermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void> {
-		const stmt = db.prepare('INSERT OR IGNORE INTO instance_permissions (group_id, instance_id, permission_type_id) VALUES (?, ?, ?)');
-		stmt.run(groupId, instanceId, permissionTypeId);
+	grantPermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void> {
+		db.prepare('INSERT OR IGNORE INTO instance_permissions (group_id, instance_id, permission_type_id) VALUES (?, ?, ?)').run(groupId, instanceId, permissionTypeId);
+		return Promise.resolve();
 	},
-	async revokePermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void> {
-		// Safeguard: Do not allow revoking 'all' (ID 1) if the group is protected
+	revokePermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void> {
 		if (permissionTypeId === 1) {
-			const group = db.prepare('SELECT "protected" FROM groups WHERE id = ?').get(groupId) as { protected: number } | undefined;
-			if (group?.protected === 1) {
-				throw new Error('Cannot revoke "all" permission from a protected access group.');
+			const type = db.prepare(`
+				SELECT gt.is_protected 
+				FROM groups g 
+				JOIN group_types gt ON g.type_id = gt.id 
+				WHERE g.id = ?
+			`).get(groupId) as { is_protected: number } | undefined;
+			if (type?.is_protected) {
+				throw new Error('Cannot revoke "all" permission from a protected group.');
 			}
 		}
-		const stmt = db.prepare('DELETE FROM instance_permissions WHERE group_id = ? AND instance_id = ? AND permission_type_id = ?');
-		stmt.run(groupId, instanceId, permissionTypeId);
+		db.prepare('DELETE FROM instance_permissions WHERE group_id = ? AND instance_id = ? AND permission_type_id = ?').run(groupId, instanceId, permissionTypeId);
+		return Promise.resolve();
 	},
-	async getInstancePermissions(instanceId: string): Promise<InstancePermission[]> {
-		const stmt = db.prepare('SELECT * FROM instance_permissions WHERE instance_id = ?');
-		return stmt.all(instanceId) as InstancePermission[];
+	getInstancePermissions(instanceId: string): Promise<InstancePermission[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM instance_permissions WHERE instance_id = ?').all(instanceId) as InstancePermission[]);
 	},
-
-	async getPermissionsByGroup(groupId: string): Promise<InstancePermission[]> {
-		const stmt = db.prepare('SELECT * FROM instance_permissions WHERE group_id = ?');
-		return stmt.all(groupId) as InstancePermission[];
+	getPermissionsByGroup(groupId: string): Promise<InstancePermission[]> {
+		return Promise.resolve(db.prepare('SELECT * FROM instance_permissions WHERE group_id = ?').all(groupId) as InstancePermission[]);
 	},
 
 	// Access Management
-	async getUserGroupIds(userId: string): Promise<string[]> {
-		const stmt = db.prepare(`
+	getUserGroupIds(userId: string): Promise<string[]> {
+		const rows = db.prepare(`
 			WITH RECURSIVE user_groups_cte AS (
 				SELECT group_id FROM group_members WHERE member_id = ? AND member_type = 'user'
 				UNION
@@ -340,23 +412,23 @@ export const sqliteAdapter: DatabaseAdapter = {
 				WHERE gm.member_type = 'group'
 			)
 			SELECT group_id FROM user_groups_cte
-		`);
-		return stmt.all(userId).map((r: any) => r.group_id);
+		`).all(userId) as { group_id: string }[];
+		return Promise.resolve(rows.map(r => r.group_id));
 	},
 	async getUserInstances(userId: string): Promise<VDIInstance[]> {
 		const groupIds = await this.getUserGroupIds(userId);
 		if (groupIds.length === 0) return [];
 
 		const placeholders = groupIds.map(() => '?').join(',');
-		const stmt = db.prepare(`
+		const rows = db.prepare(`
 			SELECT DISTINCT i.* FROM instances i
 			JOIN instance_permissions ip ON i.id = ip.instance_id
 			WHERE ip.group_id IN (${placeholders})
 			ORDER BY i.vmid ASC
-		`);
-		return stmt.all(...groupIds) as VDIInstance[];
+		`).all(...groupIds) as VDIInstance[];
+		return Promise.resolve(rows);
 	},
-	async hasInstanceAccess(userId: string, instanceId: string, permissionName?: string): Promise<boolean> {
+	async hasInstanceAccess(userId: string, instance_id: string, permissionName?: string): Promise<boolean> {
 		const groupIds = await this.getUserGroupIds(userId);
 		if (groupIds.length === 0) return false;
 
@@ -364,19 +436,21 @@ export const sqliteAdapter: DatabaseAdapter = {
 		let query = `
 			SELECT 1 FROM instance_permissions ip
 		`;
-		const params: any[] = [instanceId, ...groupIds];
+		const params: any[] = [];
 		
 		if (permissionName) {
 			query += ` JOIN permission_types pt ON ip.permission_type_id = pt.id `;
 			query += ` WHERE ip.instance_id = ? AND ip.group_id IN (${placeholders}) `;
-			query += ` AND (pt.name = ? OR pt.name = 'all') `;
-			params.push(permissionName);
+			query += ` AND (pt.name = ? pt.name = 'all') `;
+			params.push(instance_id, ...groupIds, permissionName);
 		} else {
 			query += ` WHERE ip.instance_id = ? AND ip.group_id IN (${placeholders}) `;
+			params.push(instance_id, ...groupIds);
 		}
 		
 		query += ` LIMIT 1 `;
-		const stmt = db.prepare(query);
-		return stmt.get(...params) !== undefined;
+		
+		const row = db.prepare(query).get(...params);
+		return row !== undefined;
 	}
 };

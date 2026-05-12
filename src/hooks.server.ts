@@ -44,12 +44,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (session && new Date() < session.expires_at) {
 			const user = await db.getUserById(session.user_id);
 			if (user) {
+				const groupIds = await db.getUserGroupIds(user.id);
 				event.locals.user = {
 					id: user.id,
 					username: user.username,
 					first_name: user.first_name,
 					last_name: user.last_name,
-					role: user.role
+					role: groupIds.includes('system-admin') ? 'admin' : 'user'
 				};
 			}
 		} else if (session) {

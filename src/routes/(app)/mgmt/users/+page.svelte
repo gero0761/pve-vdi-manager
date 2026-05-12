@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import DataTable from '$lib/components/DataTable.svelte';
 	let { data, form } = $props();
 
 	let selectedUserId = $state<string | null>(null);
@@ -35,66 +36,68 @@
 		</div>
 	{/if}
 
-	<div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-800 shadow-2xl ring-1 ring-white/5">
-		<div class="overflow-x-auto">
-			<table class="w-full text-left text-sm whitespace-nowrap">
-				<thead>
-					<tr class="bg-gray-900/50 text-[11px] font-bold uppercase tracking-widest text-gray-500">
-						<th class="px-8 py-5">User</th>
-						<th class="px-8 py-5">Role</th>
-						<th class="px-8 py-5 text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-gray-700/50">
-					{#each data.users as user (user.id)}
-						<tr class="transition-all hover:bg-white/2">
-							<td class="px-8 py-4">
-								<div class="flex flex-col">
-									<a href="/mgmt/users/{user.id}" class="font-bold text-gray-200 hover:text-indigo-400 transition-colors">
-										{user.username} <span class="ml-2 font-normal text-gray-500">({user.first_name} {user.last_name})</span>
-									</a>
-									<span class="text-xs text-gray-500 font-mono">{user.id}</span>
-								</div>
-							</td>
-							<td class="px-8 py-4">
-								<form method="POST" action="?/updateRole" use:enhance>
-									<input type="hidden" name="id" value={user.id} />
-									<select 
-										name="role" 
-										value={user.role} 
-										onchange={(e) => (e.target as HTMLFormElement).form?.requestSubmit()}
-										disabled={user.id === data.user.id}
-										class="rounded-md bg-gray-900 border border-gray-700 px-2.5 py-1 text-[10px] font-black uppercase tracking-tight 
-										{user.role === 'admin' ? 'text-rose-400 border-rose-500/20' : 'text-gray-400'} 
-										focus:border-indigo-500 focus:ring-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										<option value="user">User</option>
-										<option value="admin">Admin</option>
-									</select>
-								</form>
-							</td>
-							<td class="px-8 py-4 text-right">
-								<div class="flex items-center justify-end gap-3">
-									<a href="/mgmt/users/{user.id}" class="rounded-lg bg-indigo-600/10 px-3 py-1.5 text-xs font-bold text-indigo-400 border border-indigo-600/20 hover:bg-indigo-600 hover:text-white transition-all">
-										Edit Access
-									</a>
-									<button onclick={() => openPasswordModal(user.id)} class="rounded-lg bg-amber-600/10 px-3 py-1.5 text-xs font-bold text-amber-400 border border-amber-600/20 hover:bg-amber-600 hover:text-white transition-all">
-										Password
-									</button>
-									<form method="POST" action="?/delete" use:enhance>
-										<input type="hidden" name="id" value={user.id} />
-										<button type="submit" class="rounded-lg bg-red-600/10 px-3 py-1.5 text-xs font-bold text-red-400 border border-red-600/20 hover:bg-red-600 hover:text-white transition-all disabled:opacity-20" disabled={user.id === data.user.id}>
-											Delete
-										</button>
-									</form>
-								</div>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	</div>
+	<DataTable
+		columns={[
+			{ label: 'User', sortKey: 'username' },
+			{ label: 'Role', sortKey: 'role' },
+			{ label: 'Actions', class: 'text-right' }
+		]}
+		rows={data.users}
+		getRowId={(u) => u.id}
+		emptyMessage="No users found."
+	>
+		{#snippet row(user)}
+			<td class="px-8 py-4">
+				<div class="flex flex-col">
+					<a href="/mgmt/users/{user.id}" class="font-bold text-gray-200 hover:text-indigo-400 transition-colors">
+						{user.username}
+						<span class="ml-2 font-normal text-gray-500">({user.first_name} {user.last_name})</span>
+					</a>
+					<span class="text-xs text-gray-500 font-mono">{user.id}</span>
+				</div>
+			</td>
+			<td class="px-8 py-4">
+				<form method="POST" action="?/updateRole" use:enhance>
+					<input type="hidden" name="id" value={user.id} />
+					<select
+						name="role"
+						value={user.role}
+						onchange={(e) => (e.target as HTMLFormElement).form?.requestSubmit()}
+						disabled={user.id === data.user.id}
+						class="rounded-md bg-gray-900 border border-gray-700 px-2.5 py-1 text-[10px] font-black uppercase tracking-tight
+						{user.role === 'admin' ? 'text-rose-400 border-rose-500/20' : 'text-gray-400'}
+						focus:border-indigo-500 focus:ring-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						<option value="user">User</option>
+						<option value="admin">Admin</option>
+					</select>
+				</form>
+			</td>
+			<td class="px-8 py-4 text-right">
+				<div class="flex items-center justify-end gap-3">
+					<a href="/mgmt/users/{user.id}" class="rounded-lg bg-indigo-600/10 px-3 py-1.5 text-xs font-bold text-indigo-400 border border-indigo-600/20 hover:bg-indigo-600 hover:text-white transition-all">
+						Edit Access
+					</a>
+					<button
+						onclick={() => openPasswordModal(user.id)}
+						class="rounded-lg bg-amber-600/10 px-3 py-1.5 text-xs font-bold text-amber-400 border border-amber-600/20 hover:bg-amber-600 hover:text-white transition-all"
+					>
+						Password
+					</button>
+					<form method="POST" action="?/delete" use:enhance>
+						<input type="hidden" name="id" value={user.id} />
+						<button
+							type="submit"
+							class="rounded-lg bg-red-600/10 px-3 py-1.5 text-xs font-bold text-red-400 border border-red-600/20 hover:bg-red-600 hover:text-white transition-all disabled:opacity-20"
+							disabled={user.id === data.user.id}
+						>
+							Delete
+						</button>
+					</form>
+				</div>
+			</td>
+		{/snippet}
+	</DataTable>
 </div>
 
 {#if showPasswordModal}
@@ -105,9 +108,7 @@
 			</div>
 			<form method="POST" action="?/changePassword" use:enhance={() => {
 				return async ({ result }) => {
-					if (result.type === 'success') {
-						closePasswordModal();
-					}
+					if (result.type === 'success') closePasswordModal();
 				};
 			}} class="p-6">
 				<input type="hidden" name="id" value={selectedUserId} />

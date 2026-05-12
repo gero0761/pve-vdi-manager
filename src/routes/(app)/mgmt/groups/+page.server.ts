@@ -5,20 +5,19 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user || locals.user.role !== 'admin') {
-		return { groups: [] };
+		return { groups: [], groupTypes: [], instances: [], permissionTypes: [] };
 	}
 
-	const [groups, instances, permissionTypes] = await Promise.all([
-		db.getAllGroups(),
+	const [groups, groupTypes, instances, permissionTypes] = await Promise.all([
+		db.getAllGroupsDetailed(),
+		db.getAllGroupTypes(),
 		db.getAllInstances(),
 		db.getAllPermissionTypes()
 	]);
 	
 	return { 
-		groups: groups.map(g => ({
-			...g,
-			isProtected: g.protected === 1
-		})),
+		groups,
+		groupTypes,
 		instances,
 		permissionTypes
 	};
@@ -31,6 +30,8 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const name = data.get('name') as string;
 		const description = data.get('description') as string;
+		const typeIdStr = data.get('type_id') as string;
+		const typeId = typeIdStr ? parseInt(typeIdStr) : 2; // Default to Standard if not provided
 
 		if (!name) return fail(400, { error: 'Name is required' });
 
@@ -39,7 +40,7 @@ export const actions: Actions = {
 				id: crypto.randomUUID(),
 				name,
 				description: description || '',
-				protected: 0
+				type_id: typeId
 			});
 			return { success: true };
 		} catch (err: any) {
@@ -86,10 +87,10 @@ export const actions: Actions = {
 						id: groupId,
 						name: groupName,
 						description: `Automated ${permissionType} access for VM ${inst.vmid}`,
-						protected: 0
+						type_id: 2 // Permission
 					});
 					// Add newly created group to our local list to avoid duplicate creation in same batch
-					allGroups.push({ id: groupId, name: groupName, description: '', protected: 0 });
+					allGroups.push({ id: groupId, name: groupName, description: '', type_id: 2 });
 				}
 
 				await db.grantPermission(groupId, id, typeInfo.id);
@@ -111,7 +112,8 @@ export const actions: Actions = {
 		try {
 			for (const id of ids) {
 				const group = await db.getGroupById(id);
-				if (group && group.protected !== 1) {
+				// type_id 1 is System/Protected
+				if (group && group.type_id !== 1) {
 					await db.deleteGroup(id);
 				}
 			}
@@ -122,7 +124,6 @@ export const actions: Actions = {
 		}
 	},
 	delete: async ({ request, locals }) => {
-//...
 		if (!locals.user || locals.user.role !== 'admin') return fail(403);
 
 		const data = await request.formData();

@@ -5,14 +5,19 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
 	const users = await db.getAllUsers();
-	return {
-		users: users.map(u => ({
+	const usersWithRoles = await Promise.all(users.map(async (u) => {
+		const groupIds = await db.getUserGroupIds(u.id);
+		return {
 			id: u.id,
 			username: u.username,
 			first_name: u.first_name,
 			last_name: u.last_name,
-			role: u.role
-		}))
+			role: groupIds.includes('system-admin') ? 'admin' : 'user'
+		};
+	}));
+
+	return {
+		users: usersWithRoles
 	};
 };
 
@@ -65,7 +70,12 @@ export const actions: Actions = {
 			return fail(400, { error: 'You cannot change your own role' });
 		}
 		
-		await db.updateUser(id, { role });
+		if (role === 'admin') {
+			await db.addMemberToGroup('system-admin', id, 'user');
+		} else {
+			await db.removeMemberFromGroup('system-admin', id);
+		}
+		
 		return { success: true };
 	}
 };

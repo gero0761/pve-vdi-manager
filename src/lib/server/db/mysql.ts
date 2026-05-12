@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise';
 import { env } from '$env/dynamic/private';
-import type { DatabaseAdapter, VDIInstance, UserGroup, GroupMember, PermissionType, InstancePermission } from './types';
+import type { DatabaseAdapter, VDIInstance, UserGroup, GroupMember, PermissionType, InstancePermission, GroupType, User } from './types';
 import crypto from 'node:crypto';
 
 const { 
@@ -51,8 +51,7 @@ if (DB_TYPE === 'mysql') {
 					username VARCHAR(255) UNIQUE NOT NULL,
 					password_hash VARCHAR(255) NOT NULL,
 					first_name VARCHAR(255) NOT NULL,
-					last_name VARCHAR(255) NOT NULL,
-					role VARCHAR(50) DEFAULT 'user' NOT NULL
+					last_name VARCHAR(255) NOT NULL
 				)
 			`);
 			await connection.query(`
@@ -65,11 +64,20 @@ if (DB_TYPE === 'mysql') {
 				)
 			`);
 			await connection.query(`
+				CREATE TABLE IF NOT EXISTS group_types (
+					id INT PRIMARY KEY,
+					name VARCHAR(255) UNIQUE NOT NULL,
+					is_protected BOOLEAN NOT NULL DEFAULT FALSE,
+					description TEXT
+				)
+			`);
+			await connection.query(`
 				CREATE TABLE IF NOT EXISTS \`groups\` (
 					id VARCHAR(255) PRIMARY KEY,
 					name VARCHAR(255) UNIQUE NOT NULL,
+					type_id INT NOT NULL,
 					description TEXT,
-					\`protected\` BOOLEAN DEFAULT FALSE
+					FOREIGN KEY (type_id) REFERENCES group_types(id) ON DELETE RESTRICT
 				)
 			`);
 			await connection.query(`
@@ -100,24 +108,36 @@ if (DB_TYPE === 'mysql') {
 				)
 			`);
 
-            // Migration: Add UNIQUE constraint to groups(name) for existing DBs
-            try {
-                await connection.query('ALTER TABLE `groups` ADD UNIQUE INDEX idx_group_name (name)');
-            } catch (e) { /* Ignore if it already exists or fails due to duplicates */ }
+			// Initialize default group types
+			await connection.query(`
+				INSERT IGNORE INTO group_types (id, name, description, is_protected) 
+				VALUES
+					(0, 'System', 'System group automatically created and managed by the system.', TRUE),
+					(1, 'System Role', 'Group that defines system roles.', TRUE),
+					(2, 'Base Permission', 'Group that grants base permissions to instances.', TRUE),
+					(3, 'Role', 'Custom role that is assigned to users.', FALSE),
+					(4, 'Custom Permission', 'Custom permission that is assigned to instances.', FALSE),
+					(5, 'Other', 'Other groups.', FALSE)
+			`);
 
-			// Migration: Handle rename from is_system/is_protected to "protected"
-			try {
-				await connection.query('ALTER TABLE `groups` CHANGE is_system `protected` BOOLEAN DEFAULT FALSE');
-			} catch (e) { /* Ignore */ }
-            try {
-				await connection.query('ALTER TABLE `groups` CHANGE is_protected `protected` BOOLEAN DEFAULT FALSE');
-			} catch (e) { /* Ignore */ }
-			try {
-				await connection.query('ALTER TABLE `groups` ADD COLUMN `protected` BOOLEAN DEFAULT FALSE');
-			} catch (e) { /* Already exists */ }
+			// Initialize System Role Groups
+			await connection.query(`
+				INSERT IGNORE INTO \`groups\` (id, name, type_id, description)
+				VALUES
+					('system-admin', 'Admin', 1, 'Default administrators group with full system access.'),
+					('system-user', 'User', 1, 'Default users group.')
+			`);
 
-			// Migration: Mark existing system groups
-			await connection.query("UPDATE `groups` SET `protected` = TRUE WHERE name LIKE 'Access: %'");
+			// Cleanup: Remove legacy role column if it exists
+			try {
+				await connection.query('ALTER TABLE users DROP COLUMN role');
+			} catch (err) { /* ignore */ }
+
+			// Migration: Move existing data if needed (legacy fallback)
+			try {
+				await connection.query("UPDATE `groups` SET type_id = 0 WHERE type_id IS NULL AND name LIKE 'Access: %'");
+				await connection.query("UPDATE `groups` SET type_id = 3 WHERE type_id IS NULL");
+			} catch (err) { /* ignore */ }
 
 			// Initialize default permission types
 			await connection.query(`
@@ -128,14 +148,8 @@ if (DB_TYPE === 'mysql') {
 				(4, 'delete', 'Allow instance deletion')
 			`);
 
-			// Cleanup old tables if they exist
-			try {
-				await connection.query('DROP TABLE IF EXISTS group_instances');
-				await connection.query('DROP TABLE IF EXISTS user_instances');
-			} catch (e) { /* Ignore */ }
-
 			connection.release();
-			console.log('MySQL schema initialized');
+			console.log('MySQL schema initialized!');
 		} catch (err) {
 			console.error('Failed to initialize MySQL schema:', err);
 		}
@@ -153,7 +167,6 @@ export const mysqlAdapter: DatabaseAdapter = {
 		try {
 			await connection.beginTransaction();
 
-			// 1. Create instance
 			await connection.query(
 				'INSERT INTO instances (id, vmid, type, node, created_at, sync_status) VALUES (?, ?, ?, ?, ?, ?)',
 				[
@@ -166,15 +179,13 @@ export const mysqlAdapter: DatabaseAdapter = {
 				]
 			);
 
-			// 2. Create automatic access group
 			const groupId = crypto.randomUUID();
-			await connection.query('INSERT INTO \`groups\` (id, name, description, \`protected\`) VALUES (?, ?, ?, TRUE)', [
+			await connection.query('INSERT INTO `groups` (id, name, description, type_id) VALUES (?, ?, ?, 0)', [
 				groupId,
 				`Access: ${instance.vmid}`,
 				`Default access group for instance ${instance.vmid}`
 			]);
 
-			// 3. Grant 'all' permission (ID 1)
 			await connection.query('INSERT INTO instance_permissions (group_id, instance_id, permission_type_id) VALUES (?, ?, ?)', [
 				groupId,
 				instance.id,
@@ -191,31 +202,30 @@ export const mysqlAdapter: DatabaseAdapter = {
 	},
 	async deleteInstance(id: string): Promise<void> {
 		const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
+		try {
+			await connection.beginTransaction();
 
-            // Find all protected groups linked to this instance
-            const [linkedGroups] = await connection.query(`
-                SELECT DISTINCT g.id FROM \`groups\` g
-                JOIN instance_permissions ip ON g.id = ip.group_id
-                WHERE ip.instance_id = ? AND g.\`protected\` = TRUE
-            `, [id]);
+			// Find all protected groups linked to this instance (System groups, type_id=0)
+			const [linkedGroups] = await connection.query(`
+				SELECT DISTINCT g.id FROM \`groups\` g
+				JOIN group_types gt ON g.type_id = gt.id
+				JOIN instance_permissions ip ON g.id = ip.group_id
+				WHERE ip.instance_id = ? AND gt.is_protected = TRUE
+			`, [id]);
 
-            // Delete the instance (cascades perms)
-            await connection.query('DELETE FROM instances WHERE id = ?', [id]);
+			await connection.query('DELETE FROM instances WHERE id = ?', [id]);
 
-            // Delete the linked groups
-            for (const g of linkedGroups as any[]) {
-                await connection.query('DELETE FROM \`groups\` WHERE id = ?', [g.id]);
-            }
+			for (const g of linkedGroups as { id: string }[]) {
+				await connection.query('DELETE FROM `groups` WHERE id = ?', [g.id]);
+			}
 
-            await connection.commit();
-        } catch (err) {
-            await connection.rollback();
-            throw err;
-        } finally {
-            connection.release();
-        }
+			await connection.commit();
+		} catch (err) {
+			await connection.rollback();
+			throw err;
+		} finally {
+			connection.release();
+		}
 	},
 	async getAllInstances(): Promise<VDIInstance[]> {
 		const [rows] = await pool.query('SELECT * FROM instances ORDER BY vmid ASC');
@@ -226,37 +236,38 @@ export const mysqlAdapter: DatabaseAdapter = {
 	},
 
 	// User Management
-	async getUserByUsername(username: string): Promise<import('./types').User | undefined> {
+	async getUserByUsername(username: string): Promise<User | undefined> {
 		const [rows] = await pool.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
-		const results = rows as import('./types').User[];
+		const results = rows as User[];
 		return results.length > 0 ? results[0] : undefined;
 	},
-	async getUserById(id: string): Promise<import('./types').User | undefined> {
+	async getUserById(id: string): Promise<User | undefined> {
 		const [rows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
-		const results = rows as import('./types').User[];
+		const results = rows as User[];
 		return results.length > 0 ? results[0] : undefined;
 	},
-	async createUser(user: import('./types').User): Promise<void> {
+	async createUser(user: User): Promise<void> {
 		await pool.query(
-			'INSERT INTO users (id, username, password_hash, first_name, last_name, role) VALUES (?, ?, ?, ?, ?, ?)',
+			'INSERT INTO users (id, username, password_hash, first_name, last_name) VALUES (?, ?, ?, ?, ?)',
 			[
 				user.id,
 				user.username,
 				user.password_hash,
 				user.first_name,
-				user.last_name,
-				user.role || 'user'
+				user.last_name
 			]
 		);
+		// Add to system-user group by default
+		await this.addMemberToGroup('system-user', user.id, 'user');
 	},
-	async getAllUsers(): Promise<import('./types').User[]> {
+	async getAllUsers(): Promise<User[]> {
 		const [rows] = await pool.query('SELECT * FROM users ORDER BY username ASC');
-		return rows as import('./types').User[];
+		return rows as User[];
 	},
 	async deleteUser(id: string): Promise<void> {
 		await pool.query('DELETE FROM users WHERE id = ?', [id]);
 	},
-	async updateUser(id: string, user: Partial<import('./types').User>): Promise<void> {
+	async updateUser(id: string, user: Partial<User>): Promise<void> {
 		const fields = Object.keys(user).filter((k) => k !== 'id');
 		if (fields.length === 0) return;
 		const sets = fields.map((f) => `${f} = ?`).join(', ');
@@ -282,16 +293,25 @@ export const mysqlAdapter: DatabaseAdapter = {
 
 	// Group Management
 	async addGroup(group: UserGroup): Promise<void> {
-		await pool.query('INSERT INTO \`groups\` (id, name, description, \`protected\`) VALUES (?, ?, ?, ?)', [group.id, group.name, group.description, group.protected || 0]);
+		await pool.query('INSERT INTO `groups` (id, name, description, type_id) VALUES (?, ?, ?, ?)', [
+			group.id, 
+			group.name, 
+			group.description, 
+			group.type_id !== undefined ? group.type_id : 3 // Default to Role
+		]);
 	},
 	async deleteGroup(id: string): Promise<void> {
-		// Safeguard: Check if group is protected
-		const [rows] = await pool.query('SELECT \`protected\` FROM \`groups\` WHERE id = ? LIMIT 1', [id]);
-		const results = rows as any[];
-		if (results.length > 0 && results[0].protected) {
-			throw new Error('Cannot delete a protected access group.');
+		const [rows] = await pool.query(`
+			SELECT gt.is_protected 
+			FROM \`groups\` g 
+			JOIN group_types gt ON g.type_id = gt.id 
+			WHERE g.id = ? LIMIT 1
+		`, [id]);
+		const results = rows as { is_protected: number }[];
+		if (results.length > 0 && results[0].is_protected) {
+			throw new Error('Cannot delete a protected group.');
 		}
-		await pool.query('DELETE FROM \`groups\` WHERE id = ?', [id]);
+		await pool.query('DELETE FROM `groups` WHERE id = ?', [id]);
 	},
 	async updateGroup(id: string, group: Partial<UserGroup>): Promise<void> {
 		const fields = Object.keys(group).filter((k) => k !== 'id');
@@ -301,22 +321,93 @@ export const mysqlAdapter: DatabaseAdapter = {
 		await pool.query(`UPDATE \`groups\` SET ${sets} WHERE id = ?`, [...values, id]);
 	},
 	async getAllGroups(): Promise<UserGroup[]> {
-		const [rows] = await pool.query('SELECT * FROM \`groups\` ORDER BY name ASC');
+		const [rows] = await pool.query('SELECT * FROM `groups` ORDER BY name ASC');
 		return rows as UserGroup[];
 	},
+	async getAllGroupsDetailed(): Promise<(UserGroup & { type: GroupType })[]> {
+		const [rows] = await pool.query(`
+			SELECT g.*, gt.id AS gt_id, gt.name AS gt_name, gt.description AS gt_description, gt.is_protected AS gt_protected
+			FROM \`groups\` g
+			LEFT JOIN group_types gt ON g.type_id = gt.id
+			ORDER BY g.name ASC
+		`);
+		const results = rows as (UserGroup & { gt_id: number; gt_name: string; gt_description: string; gt_protected: number })[];
+		return results.map(row => ({
+			id: row.id,
+			name: row.name,
+			type_id: row.type_id,
+			description: row.description,
+			type: {
+				id: row.gt_id,
+				name: row.gt_name,
+				description: row.gt_description,
+				is_protected: !!row.gt_protected
+			}
+		}));
+	},
 	async getGroupById(id: string): Promise<UserGroup | undefined> {
-		const [rows] = await pool.query('SELECT * FROM \`groups\` WHERE id = ? LIMIT 1', [id]);
+		const [rows] = await pool.query('SELECT * FROM `groups` WHERE id = ? LIMIT 1', [id]);
 		const results = rows as UserGroup[];
 		return results.length > 0 ? results[0] : undefined;
+	},
+	async getGroupDetailedById(id: string): Promise<UserGroup & { type: GroupType } | undefined> {
+		const [rows] = await pool.query(`
+			SELECT g.*, gt.id AS gt_id, gt.name AS gt_name, gt.description AS gt_description, gt.is_protected AS gt_protected
+			FROM \`groups\` g
+			LEFT JOIN group_types gt ON g.type_id = gt.id
+			WHERE g.id = ?
+		`, [id]);
+		const results = rows as (UserGroup & { gt_id: number; gt_name: string; gt_description: string; gt_protected: number })[];
+		if (results.length === 0) return undefined;
+		const row = results[0];
+		return {
+			id: row.id,
+			name: row.name,
+			type_id: row.type_id,
+			description: row.description,
+			type: {
+				id: row.gt_id,
+				name: row.gt_name,
+				description: row.gt_description,
+				is_protected: !!row.gt_protected
+			}
+		};
+	},
+	async getAllGroupTypes(): Promise<GroupType[]> {
+		const [rows] = await pool.query('SELECT * FROM group_types ORDER BY name ASC');
+		const results = rows as any[];
+		return results.map(r => ({
+			id: r.id,
+			name: r.name,
+			description: r.description,
+			is_protected: !!r.is_protected
+		}));
+	},
+	async getGroupTypeById(id: string): Promise<GroupType | undefined> {
+		const [rows] = await pool.query('SELECT * FROM group_types WHERE id = ?', [id]);
+		const results = rows as any[];
+		if (results.length === 0) return undefined;
+		const r = results[0];
+		return {
+			id: r.id,
+			name: r.name,
+			description: r.description,
+			is_protected: !!r.is_protected
+		};
 	},
 
 	// Membership Management
 	async addMemberToGroup(groupId: string, memberId: string, memberType: 'user' | 'group'): Promise<void> {
 		if (memberType === 'group') {
-			const [rows] = await pool.query('SELECT \`protected\` FROM \`groups\` WHERE id = ? LIMIT 1', [memberId]);
-			const results = rows as any[];
-			if (results.length > 0 && results[0].protected) {
-				throw new Error('Protected access groups cannot be added as members of other groups.');
+			const [rows] = await pool.query(`
+				SELECT gt.is_protected 
+				FROM \`groups\` g 
+				JOIN group_types gt ON g.type_id = gt.id 
+				WHERE g.id = ? LIMIT 1
+			`, [memberId]);
+			const results = rows as { is_protected: number }[];
+			if (results.length > 0 && results[0].is_protected) {
+				throw new Error('Protected groups cannot be added as members of other groups.');
 			}
 		}
 		await pool.query('INSERT IGNORE INTO group_members (group_id, member_id, member_type) VALUES (?, ?, ?)', [groupId, memberId, memberType]);
@@ -343,14 +434,14 @@ export const mysqlAdapter: DatabaseAdapter = {
 		`, [userId]);
 		return rows as UserGroup[];
 	},
-    async getGroupsWhereMember(memberId: string, memberType: 'user' | 'group'): Promise<UserGroup[]> {
-        const [rows] = await pool.query(`
-            SELECT g.* FROM \`groups\` g
-            JOIN group_members gm ON g.id = gm.group_id
-            WHERE gm.member_id = ? AND gm.member_type = ?
-        `, [memberId, memberType]);
-        return rows as UserGroup[];
-    },
+	async getGroupsWhereMember(memberId: string, memberType: 'user' | 'group'): Promise<UserGroup[]> {
+		const [rows] = await pool.query(`
+			SELECT g.* FROM \`groups\` g
+			JOIN group_members gm ON g.id = gm.group_id
+			WHERE gm.member_id = ? AND gm.member_type = ?
+		`, [memberId, memberType]);
+		return rows as UserGroup[];
+	},
 
 	// Permission Management
 	async getAllPermissionTypes(): Promise<PermissionType[]> {
@@ -366,12 +457,16 @@ export const mysqlAdapter: DatabaseAdapter = {
 		await pool.query('INSERT IGNORE INTO instance_permissions (group_id, instance_id, permission_type_id) VALUES (?, ?, ?)', [groupId, instanceId, permissionTypeId]);
 	},
 	async revokePermission(groupId: string, instanceId: string, permissionTypeId: number): Promise<void> {
-		// Safeguard: Do not allow revoking 'all' (ID 1) if the group is protected
 		if (permissionTypeId === 1) {
-			const [rows] = await pool.query('SELECT \`protected\` FROM \`groups\` WHERE id = ? LIMIT 1', [groupId]);
-			const results = rows as any[];
-			if (results.length > 0 && results[0].protected) {
-				throw new Error('Cannot revoke "all" permission from a protected access group.');
+			const [rows] = await pool.query(`
+				SELECT gt.is_protected 
+				FROM \`groups\` g 
+				JOIN group_types gt ON g.type_id = gt.id 
+				WHERE g.id = ? LIMIT 1
+			`, [groupId]);
+			const results = rows as { is_protected: number }[];
+			if (results.length > 0 && results[0].is_protected) {
+				throw new Error('Cannot revoke "all" permission from a protected group.');
 			}
 		}
 		await pool.query('DELETE FROM instance_permissions WHERE group_id = ? AND instance_id = ? AND permission_type_id = ?', [groupId, instanceId, permissionTypeId]);
@@ -380,7 +475,6 @@ export const mysqlAdapter: DatabaseAdapter = {
 		const [rows] = await pool.query('SELECT * FROM instance_permissions WHERE instance_id = ?', [instanceId]);
 		return rows as InstancePermission[];
 	},
-
 	async getPermissionsByGroup(groupId: string): Promise<InstancePermission[]> {
 		const [rows] = await pool.query('SELECT * FROM instance_permissions WHERE group_id = ?', [groupId]);
 		return rows as InstancePermission[];

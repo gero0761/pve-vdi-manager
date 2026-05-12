@@ -1,8 +1,21 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
 	import SpinningCircle from '$lib/components/SpinningCircle.svelte';
-	let { data, form } = $props();
+	import type { UserGroup, GroupType, VDIInstance, PermissionType } from '$lib/server/db/types';
+
+	interface Props {
+		data: {
+			groups: (UserGroup & { type: GroupType })[];
+			groupTypes: GroupType[];
+			instances: VDIInstance[];
+			permissionTypes: PermissionType[];
+		};
+		form: any;
+	}
+
+	let { data, form }: Props = $props();
 
 	let showCreateModal = $state(false);
 	let activeTab = $state('standard');
@@ -52,16 +65,10 @@
 	let deletingGroupId = $state<string | null>(null);
 	let selectedGroups = $state<string[]>([]);
 
-	const allSelectableGroups = $derived(data.groups.filter(g => !g.isProtected).map(g => g.id));
+	// Protection check based on group type metadata
+	const allSelectableGroups = $derived(data.groups.filter(g => !g.type?.is_protected).map(g => g.id));
 	const isAllSelected = $derived(selectedGroups.length > 0 && selectedGroups.length === allSelectableGroups.length);
 
-	function toggleAllGroups() {
-		if (isAllSelected) {
-			selectedGroups = [];
-		} else {
-			selectedGroups = allSelectableGroups;
-		}
-	}
 
 	function toggleGroupSelection(id: string) {
 		if (selectedGroups.includes(id)) {
@@ -84,6 +91,14 @@
 			}
 		};
 	}
+	const typeStyles: Record<number, string> = {
+		0: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+		1: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+		2: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+		3: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+		4: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+		5: 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+	};
 </script>
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -152,93 +167,70 @@
 		</div>
 	{/if}
 
-	<div class="overflow-hidden rounded-2xl border border-gray-800 bg-gray-800 shadow-2xl ring-1 ring-white/5">
-		<div class="overflow-x-auto">
-			<table class="w-full text-left text-sm whitespace-nowrap">
-				<thead>
-					<tr class="bg-gray-900/50 text-[11px] font-bold uppercase tracking-widest text-gray-500">
-						<th class="px-6 py-5 w-10">
-							<input 
-								type="checkbox" 
-								checked={isAllSelected}
-								onchange={toggleAllGroups}
-								class="h-4 w-4 rounded border-gray-700 bg-gray-800 text-amber-500 focus:ring-0 cursor-pointer"
-							/>
-						</th>
-						<th class="px-8 py-5">Group Name</th>
-						<th class="px-8 py-5">Description</th>
-						<th class="px-8 py-5">Status</th>
-						<th class="px-8 py-5 text-right">Actions</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-gray-700/50">
-					{#each data.groups as group (group.id)}
-						<tr class="transition-all hover:bg-white/2 {selectedGroups.includes(group.id) ? 'bg-amber-500/5' : ''}">
-							<td class="px-6 py-4">
-								<input 
-									type="checkbox" 
-									checked={selectedGroups.includes(group.id)}
-									onchange={() => toggleGroupSelection(group.id)}
-									disabled={group.isProtected || isLoading}
-									class="h-4 w-4 rounded border-gray-700 bg-gray-800 text-amber-500 focus:ring-0 cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
-								/>
-							</td>
-							<td class="px-8 py-4">
-								<div class="flex flex-col">
-									<a href="/mgmt/groups/{group.id}" class="font-bold text-gray-200 hover:text-amber-400 transition-colors">
-										{group.name}
-									</a>
-									<span class="text-xs text-gray-500 font-mono">{group.id}</span>
-								</div>
-							</td>
-							<td class="px-8 py-4 text-gray-400 max-w-xs truncate">
-								{group.description || 'No description'}
-							</td>
-							<td class="px-8 py-4">
-								{#if group.isProtected}
-									<span class="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight text-blue-400 border border-blue-500/20">
-										System / Protected
-									</span>
-								{:else}
-									<span class="rounded-full bg-gray-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight text-gray-500 border border-gray-500/20">
-										Manual
-									</span>
-								{/if}
-							</td>
-							<td class="px-8 py-4 text-right">
-								<div class="flex items-center justify-end gap-3">
-									<a href="/mgmt/groups/{group.id}" class="rounded-lg bg-indigo-600/10 px-3 py-1.5 text-xs font-bold text-indigo-400 border border-indigo-600/20 hover:bg-indigo-600 hover:text-white transition-all">
-										Members & Perms
-									</a>
-									<form method="POST" action="?/delete" use:enhance={() => {
-										deletingGroupId = group.id;
-										return async ({ update }) => {
-											await update();
-											deletingGroupId = null;
-										};
-									}}>
-										<input type="hidden" name="id" value={group.id} />
-										<button 
-											type="submit" 
-											class="rounded-lg bg-red-600/10 px-3 py-1.5 text-xs font-bold text-red-400 border border-red-600/20 hover:bg-red-600 hover:text-white transition-all disabled:opacity-10 min-w-[70px] flex justify-center" 
-											disabled={group.isProtected || !!deletingGroupId}
-											title={group.isProtected ? "Cannot delete system groups" : ""}
-										>
-											{#if deletingGroupId === group.id}
-												<SpinningCircle size="h-4 w-4" color="text-red-400" />
-											{:else}
-												Delete
-											{/if}
-										</button>
-									</form>
-								</div>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	</div>
+	<DataTable
+		columns={[
+			{ label: 'Group Name', sortKey: 'name' },
+			{ label: 'Description' },
+			{ label: 'Type', sortKey: 'type.name' },
+			{ label: 'Actions', class: 'text-right' }
+		]}
+		rows={data.groups}
+		selectable
+		selectedIds={selectedGroups}
+		getRowId={(g) => g.id}
+		{isAllSelected}
+		onSelectAll={(checked) => checked ? (selectedGroups = allSelectableGroups) : (selectedGroups = [])}
+		onSelectRow={(id) => toggleGroupSelection(id)}
+		rowClass={(g) => selectedGroups.includes(g.id) ? 'bg-amber-500/5' : ''}
+		emptyMessage="No groups have been created yet."
+	>
+		{#snippet row(group)}
+			<td class="px-8 py-4">
+				<div class="flex flex-col">
+					<a href="/mgmt/groups/{group.id}" class="font-bold text-gray-200 hover:text-amber-400 transition-colors">
+						{group.name}
+					</a>
+					<span class="text-xs text-gray-500 font-mono">{group.id}</span>
+				</div>
+			</td>
+			<td class="px-8 py-4 text-gray-400 max-w-xs truncate">
+				{group.description || 'No description'}
+			</td>
+			<td class="px-8 py-4">
+				<span class="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight border {typeStyles[group.type_id] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}">
+					{group.type?.name || 'Unknown'}
+				</span>
+			</td>
+			<td class="px-8 py-4 text-right">
+				<div class="flex items-center justify-end gap-3">
+					<a href="/mgmt/groups/{group.id}" class="rounded-lg bg-indigo-600/10 px-3 py-1.5 text-xs font-bold text-indigo-400 border border-indigo-600/20 hover:bg-indigo-600 hover:text-white transition-all">
+						Members & Perms
+					</a>
+					<form method="POST" action="?/delete" use:enhance={() => {
+						deletingGroupId = group.id;
+						return async ({ update }) => {
+							await update();
+							deletingGroupId = null;
+						};
+					}}>
+						<input type="hidden" name="id" value={group.id} />
+						<button
+							type="submit"
+							class="rounded-lg bg-red-600/10 px-3 py-1.5 text-xs font-bold text-red-400 border border-red-600/20 hover:bg-red-600 hover:text-white transition-all disabled:opacity-10 min-w-[70px] flex justify-center"
+							disabled={group.type?.is_protected || !!deletingGroupId}
+							title={group.type?.is_protected ? 'Cannot delete system groups' : ''}
+						>
+							{#if deletingGroupId === group.id}
+								<SpinningCircle size="h-4 w-4" color="text-red-400" />
+							{:else}
+								Delete
+							{/if}
+						</button>
+					</form>
+				</div>
+			</td>
+		{/snippet}
+	</DataTable>
 </div>
 
 {#if showCreateModal}
@@ -277,6 +269,14 @@
 							<input type="text" id="name" name="name" required placeholder="e.g. Finance Team" class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 placeholder:text-gray-600" />
 						</div>
 						<div class="space-y-2">
+							<label for="type_id" class="block text-xs font-bold text-gray-400 uppercase tracking-tight">Group Type</label>
+							<select id="type_id" name="type_id" class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20">
+								{#each data.groupTypes?.filter(t => !t.is_protected) || [] as type (type.id)}
+									<option value={type.id} selected={type.id === 2}>{type.name}</option>
+								{/each}
+							</select>
+						</div>
+						<div class="space-y-2">
 							<label for="description" class="block text-xs font-bold text-gray-400 uppercase tracking-tight">Description</label>
 							<textarea id="description" name="description" rows="3" placeholder="Explain the purpose of this group..." class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 px-4 text-gray-200 shadow-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 placeholder:text-gray-600"></textarea>
 						</div>
@@ -309,9 +309,10 @@
 				}} class="p-6">
 					<div class="space-y-6">
 						<div class="space-y-3">
-							<label class="block text-xs font-bold text-gray-400 uppercase tracking-tight">1. Select Instances ({selectedInstances.length})</label>
+							<label class="block text-xs font-bold text-gray-400 uppercase tracking-tight" for="wizardSearch">1. Select Instances ({selectedInstances.length})</label>
 							<div class="relative">
 								<input 
+									id="wizardSearch"
 									type="text" 
 									bind:value={searchQuery}
 									placeholder="Search VMID or ID..." 
@@ -355,10 +356,16 @@
 
 						{#if selectedInstances.length > 0}
 							<div class="rounded-xl bg-amber-500/5 border border-amber-500/10 p-3">
-								<p class="text-[10px] font-bold text-amber-500/60 uppercase tracking-widest mb-2">Summary</p>
-								<p class="text-xs text-gray-400">
-									Will create {selectedInstances.length} groups and link them to their respective instances.
-								</p>
+								<p class="text-[10px] font-bold text-amber-500/60 uppercase tracking-widest mb-2">Summary & Warning</p>
+								<div class="space-y-2">
+									<p class="text-xs text-gray-400">
+										Will create <b>{selectedInstances.length}</b> groups of type <span class="text-blue-400 font-bold">"Permission"</span>.
+									</p>
+									<p class="text-[10px] text-red-400 font-bold leading-tight flex items-start gap-1.5">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+										NOTICE: "Permission" type groups are system-protected and cannot be deleted once created.
+									</p>
+								</div>
 							</div>
 						{/if}
 					</div>
