@@ -44,6 +44,8 @@
 	interface Props {
 		isOpen: boolean;
 		templates: Template[];
+		isLoadingTemplates?: boolean;
+		templateError?: string;
 		onClose: () => void;
 		onDeployed: (clones: Instance[]) => void;
 	}
@@ -51,6 +53,8 @@
 	let {
 		isOpen = false,
 		templates = [],
+		isLoadingTemplates = false,
+		templateError = '',
 		onClose,
 		onDeployed
 	}: Props = $props();
@@ -72,9 +76,9 @@
 	let statusMessage = $state('');
 	let error = $state('');
 
-	// Fetch groups, users, and permission types on mount/open
+	// Fetch groups, users, and permission types when switching to assigned tab
 	$effect(() => {
-		if (isOpen) {
+		if (isOpen && activeTab === 'assigned' && groups.length === 0 && !isLoadingData) {
 			fetchModalData();
 		}
 	});
@@ -186,47 +190,36 @@
 
 		isDeploying = true;
 		error = '';
-		const deployedClones: Instance[] = [];
+		statusMessage = `Bulk cloning and provisioning ${targets.length} instance(s)...`;
 
 		try {
-			// Loop through selected users sequentially to provide rich status updates and avoid timeouts
-			for (let i = 0; i < targets.length; i++) {
-				const user = targets[i];
-				const permissionTypeId = userPermissions[user.id];
+			const deployments = targets.map((u) => ({
+				userId: u.id,
+				permissionTypeId: userPermissions[u.id]
+			}));
 
-				statusMessage = `[${i + 1}/${targets.length}] Cloning VM for student "${user.username}"...`;
+			const res = await fetch('/api/pve/assigned-deploy', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					template_vmid: template.vmid,
+					template_name: template.name,
+					template_node: template.node,
+					template_type: template.type,
+					deployments
+				})
+			});
 
-				const res = await fetch('/api/pve/assigned-deploy', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						template_vmid: template.vmid,
-						template_name: template.name,
-						template_node: template.node,
-						template_type: template.type,
-						deployments: [{ userId: user.id, permissionTypeId }]
-					})
-				});
+			const data = await res.json();
 
-				const data = await res.json();
-
-				if (data.error) {
-					throw new Error(`Failed on student "${user.username}": ${data.error}`);
-				}
-
-				if (data.clones) {
-					deployedClones.push(...data.clones);
-				}
+			if (data.error) {
+				throw new Error(data.error);
 			}
 
-			onDeployed(deployedClones);
+			onDeployed(data.clones || []);
 			onClose();
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
-			// Partial success is still possible, trigger refresh anyway
-			if (deployedClones.length > 0) {
-				onDeployed(deployedClones);
-			}
 		} finally {
 			isDeploying = false;
 			statusMessage = '';
@@ -279,10 +272,31 @@
 
 			<!-- Scrollable Content -->
 			<div class="p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
-				{#if isLoadingData}
+				{#if isLoadingTemplates}
 					<div class="flex flex-col justify-center items-center py-12 gap-3">
 						<SpinningCircle size="h-8 w-8" color="text-indigo-500" />
-						<span class="text-sm font-medium text-gray-400">Loading user groups...</span>
+						<span class="text-sm font-medium text-gray-400">Scanning Proxmox for templates...</span>
+					</div>
+				{:else if templateError}
+					<div class="rounded-xl border border-red-500/50 bg-red-500/10 p-6 font-medium text-red-400 shadow-xl">
+						<div class="flex items-center gap-3">
+							<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+							</svg>
+							<span>Proxmox Error: {templateError}</span>
+						</div>
+					</div>
+				{:else if templates.length === 0}
+					<div class="space-y-6 rounded-2xl border-2 border-dashed border-gray-700 bg-gray-800/30 p-16 text-center shadow-2xl">
+						<svg class="mx-auto h-16 w-16 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+						</svg>
+						<div class="space-y-2">
+							<h3 class="text-2xl font-bold text-white">No Templates Found</h3>
+							<p class="mx-auto max-w-lg leading-relaxed text-gray-400">
+								We could not find any VM or LXC templates on your Proxmox cluster. Please log into Proxmox and convert an existing VM to a template.
+							</p>
+						</div>
 					</div>
 				{:else}
 					<!-- Template Selection (used for both tabs) -->
@@ -317,89 +331,96 @@
 					{:else}
 						<!-- Assigned Provisioning Form -->
 						<div class="space-y-6 animate-in fade-in duration-200">
-							<div class="space-y-2">
-								<label for="modal-group-select" class="block text-xs font-black uppercase tracking-widest text-gray-400">Target Group</label>
-								<select
-									id="modal-group-select"
-									bind:value={selectedGroupId}
-									disabled={isDeploying}
-									class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 pr-10 pl-4 text-gray-200 shadow-sm transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-								>
-									<option value="" disabled>Select a user group...</option>
-									{#each groups as g (g.id)}
-										<option value={g.id}>{g.name} ({g.users.length} users) {g.is_protected ? '[System]' : ''}</option>
-									{/each}
-								</select>
-							</div>
+							{#if isLoadingData}
+								<div class="flex flex-col justify-center items-center py-12 gap-3">
+									<SpinningCircle size="h-8 w-8" color="text-indigo-500" />
+									<span class="text-sm font-medium text-gray-400">Loading user groups...</span>
+								</div>
+							{:else}
+								<div class="space-y-2">
+									<label for="modal-group-select" class="block text-xs font-black uppercase tracking-widest text-gray-400">Target Group</label>
+									<select
+										id="modal-group-select"
+										bind:value={selectedGroupId}
+										disabled={isDeploying}
+										class="w-full rounded-xl border-gray-700 bg-gray-900 py-2.5 pr-10 pl-4 text-gray-200 shadow-sm transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+									>
+										<option value="" disabled>Select a user group...</option>
+										{#each groups as g (g.id)}
+											<option value={g.id}>{g.name} ({g.users.length} users) {g.is_protected ? '[System]' : ''}</option>
+										{/each}
+									</select>
+								</div>
 
-							{#if selectedGroupId}
-								<div class="space-y-3">
-									<div class="flex justify-between items-center">
-										<h4 class="text-xs font-black uppercase tracking-widest text-gray-400">Assign Permissions per User</h4>
-										<span class="text-xs font-semibold text-indigo-400">{selectedCount} of {groupUsers.length} selected</span>
-									</div>
+								{#if selectedGroupId}
+									<div class="space-y-3">
+										<div class="flex justify-between items-center">
+											<h4 class="text-xs font-black uppercase tracking-widest text-gray-400">Assign Permissions per User</h4>
+											<span class="text-xs font-semibold text-indigo-400">{selectedCount} of {groupUsers.length} selected</span>
+										</div>
 
-									<div class="border border-gray-700 bg-gray-900/40 rounded-2xl overflow-hidden">
-										<div class="max-h-60 overflow-y-auto custom-scrollbar">
-											<table class="w-full text-left border-collapse">
-												<thead>
-													<tr class="border-b border-gray-700 bg-gray-900/60 text-[10px] font-black uppercase tracking-wider text-gray-400">
-														<th class="p-3 w-12 text-center">
-															<input 
-																type="checkbox" 
-																checked={groupUsers.length > 0 && selectedCount === groupUsers.length} 
-																onchange={handleToggleAll} 
-																disabled={isDeploying}
-																class="rounded border-gray-700 bg-gray-800 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
-															/>
-														</th>
-														<th class="p-3">User</th>
-														<th class="p-3 w-48">Permission Type</th>
-													</tr>
-												</thead>
-												<tbody class="divide-y divide-gray-800">
-													{#each groupUsers as user (user.id)}
-														<tr class="hover:bg-white/2 transition text-sm text-gray-300">
-															<td class="p-3 text-center">
+										<div class="border border-gray-700 bg-gray-900/40 rounded-2xl overflow-hidden">
+											<div class="max-h-60 overflow-y-auto custom-scrollbar">
+												<table class="w-full text-left border-collapse">
+													<thead>
+														<tr class="border-b border-gray-700 bg-gray-900/60 text-[10px] font-black uppercase tracking-wider text-gray-400">
+															<th class="p-3 w-12 text-center">
 																<input 
 																	type="checkbox" 
-																	bind:checked={selectedUsers[user.id]} 
+																	checked={groupUsers.length > 0 && selectedCount === groupUsers.length} 
+																	onchange={handleToggleAll} 
 																	disabled={isDeploying}
 																	class="rounded border-gray-700 bg-gray-800 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
 																/>
-															</td>
-															<td class="p-3 font-medium">
-																<div>
-																	<span class="text-white font-bold">{user.username}</span>
-																	{#if user.first_name || user.last_name}
-																		<span class="text-xs text-gray-500 ml-1">({user.first_name || ''} {user.last_name || ''})</span>
-																	{/if}
-																</div>
-															</td>
-															<td class="p-3">
-																<select 
-																	bind:value={userPermissions[user.id]} 
-																	disabled={isDeploying || !selectedUsers[user.id]}
-																	class="w-full rounded-lg border-gray-700 bg-gray-800 py-1 text-xs text-gray-200 focus:border-indigo-500 disabled:opacity-40"
-																>
-																	{#each permissionTypes as pt (pt.id)}
-																		<option value={pt.id}>{pt.name} - {pt.description}</option>
-																	{/each}
-																</select>
-															</td>
+															</th>
+															<th class="p-3">User</th>
+															<th class="p-3 w-48">Permission Type</th>
 														</tr>
-													{:else}
-														<tr>
-															<td colspan="3" class="p-8 text-center text-gray-500 italic text-xs">
-																This group has no user members.
-															</td>
-														</tr>
-													{/each}
-												</tbody>
-											</table>
+													</thead>
+													<tbody class="divide-y divide-gray-800">
+														{#each groupUsers as user (user.id)}
+															<tr class="hover:bg-white/2 transition text-sm text-gray-300">
+																<td class="p-3 text-center">
+																	<input 
+																		type="checkbox" 
+																		bind:checked={selectedUsers[user.id]} 
+																		disabled={isDeploying}
+																		class="rounded border-gray-700 bg-gray-800 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+																	/>
+																</td>
+																<td class="p-3 font-medium">
+																	<div>
+																		<span class="text-white font-bold">{user.username}</span>
+																		{#if user.first_name || user.last_name}
+																			<span class="text-xs text-gray-500 ml-1">({user.first_name || ''} {user.last_name || ''})</span>
+																		{/if}
+																	</div>
+																</td>
+																<td class="p-3">
+																	<select 
+																		bind:value={userPermissions[user.id]} 
+																		disabled={isDeploying || !selectedUsers[user.id]}
+																		class="w-full rounded-lg border-gray-700 bg-gray-800 py-1 text-xs text-gray-200 focus:border-indigo-500 disabled:opacity-40"
+																	>
+																		{#each permissionTypes as pt (pt.id)}
+																			<option value={pt.id}>{pt.name} - {pt.description}</option>
+																		{/each}
+																	</select>
+																</td>
+															</tr>
+														{:else}
+															<tr>
+																<td colspan="3" class="p-8 text-center text-gray-500 italic text-xs">
+																	This group has no user members.
+																</td>
+															</tr>
+														{/each}
+													</tbody>
+												</table>
+											</div>
 										</div>
 									</div>
-								</div>
+								{/if}
 							{/if}
 						</div>
 					{/if}

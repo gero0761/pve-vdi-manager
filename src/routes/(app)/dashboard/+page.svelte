@@ -384,61 +384,7 @@
 		</div>
 	</header>
 
-	{#if data.user.role === 'admin'}
-		{#if loadingTemplates}
-			<div
-				class="flex flex-col items-center justify-center rounded-2xl border border-gray-800 bg-gray-800/50 p-20 text-center shadow-2xl backdrop-blur-sm"
-			>
-				<div
-					class="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"
-				></div>
-				<span class="text-lg font-medium text-gray-300">Scanning Proxmox for Templates...</span>
-			</div>
-		{:else if templateError}
-			<div
-				class="rounded-xl border border-red-500/50 bg-red-500/10 p-6 font-medium text-red-400 shadow-xl"
-			>
-				<div class="flex items-center gap-3">
-					<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-						/>
-					</svg>
-					<span>Proxmox Error: {templateError}</span>
-				</div>
-			</div>
-		{:else if templates.length === 0}
-			<div
-				class="space-y-6 rounded-2xl border-2 border-dashed border-gray-700 bg-gray-800/30 p-16 text-center shadow-2xl"
-			>
-				<svg
-					class="mx-auto h-16 w-16 text-gray-600"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-					/>
-				</svg>
-				<div class="space-y-2">
-					<h3 class="text-2xl font-bold text-white">No Templates Found</h3>
-					<p class="mx-auto max-w-lg leading-relaxed text-gray-400">
-						We could not find any VM or LXC templates on your Proxmox cluster. Please log into
-						Proxmox, right-click an existing VM or container, and select <strong
-							>Convert to template</strong
-							> to get started.
-					</p>
-				</div>
-			</div>
-		{/if}
-	{/if}
+
 
 	<!-- Instances Table Section -->
 	<DataTable
@@ -585,6 +531,8 @@
 <InstanceDeployModal
 	isOpen={isDeployModalOpen}
 	{templates}
+	isLoadingTemplates={loadingTemplates}
+	templateError={templateError}
 	onClose={() => (isDeployModalOpen = false)}
 	onDeployed={handleDeployed}
 />
