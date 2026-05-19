@@ -1,14 +1,14 @@
 <script lang="ts">
 	import SpinningCircle from './SpinningCircle.svelte';
 
-	interface Template {
+	export interface Template {
 		vmid: number;
 		name: string;
 		node: string;
 		type: 'qemu' | 'lxc';
 	}
 
-	interface Group {
+	export interface Group {
 		id: string;
 		name: string;
 		description: string;
@@ -17,14 +17,14 @@
 		users: string[]; // User IDs
 	}
 
-	interface User {
+	export interface User {
 		id: string;
 		username: string;
 		first_name: string;
 		last_name: string;
 	}
 
-	interface PermissionType {
+	export interface PermissionType {
 		id: number;
 		name: string;
 		description: string;
@@ -46,6 +46,10 @@
 		templates: Template[];
 		isLoadingTemplates?: boolean;
 		templateError?: string;
+		groups: Group[];
+		users: User[];
+		permissionTypes: PermissionType[];
+		isLoadingData?: boolean;
 		onClose: () => void;
 		onDeployed: (clones: Instance[]) => void;
 	}
@@ -55,6 +59,10 @@
 		templates = [],
 		isLoadingTemplates = false,
 		templateError = '',
+		groups = [],
+		users = [],
+		permissionTypes = [],
+		isLoadingData = false,
 		onClose,
 		onDeployed
 	}: Props = $props();
@@ -64,51 +72,21 @@
 	let count = $state(1);
 
 	// Assigned Provisioning state
-	let groups = $state<Group[]>([]);
-	let users = $state<User[]>([]);
-	let permissionTypes = $state<PermissionType[]>([]);
 	let selectedGroupId = $state<string>('');
 	let selectedUsers = $state<Record<string, boolean>>({});
 	let userPermissions = $state<Record<string, number>>({});
 
-	let isLoadingData = $state(false);
 	let isDeploying = $state(false);
 	let statusMessage = $state('');
 	let error = $state('');
 
-	// Fetch groups, users, and permission types when switching to assigned tab
+	// Select first non-protected group by default when groups are loaded
 	$effect(() => {
-		if (isOpen && activeTab === 'assigned' && groups.length === 0 && !isLoadingData) {
-			fetchModalData();
+		if (isOpen && groups.length > 0 && !selectedGroupId) {
+			const defaultGrp = groups.find((g) => !g.is_protected) || groups[0];
+			selectedGroupId = defaultGrp ? defaultGrp.id : '';
 		}
 	});
-
-	async function fetchModalData() {
-		isLoadingData = true;
-		error = '';
-		try {
-			const res = await fetch('/api/mgmt/groups');
-			const data = await res.json();
-			if (data.error) {
-				error = data.error;
-			} else {
-				groups = data.groups || [];
-				users = data.users || [];
-				permissionTypes = data.permissionTypes || [];
-				if (groups.length > 0) {
-					// Exclude default system groups if possible, but let the user select
-					// Select first non-protected group by default
-					const defaultGrp = groups.find((g) => !g.is_protected) || groups[0];
-					selectedGroupId = defaultGrp ? defaultGrp.id : '';
-				}
-			}
-		} catch (e) {
-			error = 'Failed to load group and user data';
-			console.error(e);
-		} finally {
-			isLoadingData = false;
-		}
-	}
 
 	// Initialize select state when group changes
 	$effect(() => {

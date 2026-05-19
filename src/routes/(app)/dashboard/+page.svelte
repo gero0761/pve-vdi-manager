@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { preloadData } from '$app/navigation';
 	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import InstanceDeleteModal from '$lib/components/InstanceDeleteModal.svelte';
-	import InstanceDeployModal from '$lib/components/InstanceDeployModal.svelte';
+	import InstanceDeployModal, { type Group, type User, type PermissionType } from '$lib/components/InstanceDeployModal.svelte';
 
 	let confirmState = $state({
 		isOpen: false,
@@ -76,8 +77,14 @@
 	};
 
 	let templates: Template[] = $state([]);
-	let loadingTemplates = $state(true);
+	let loadingTemplates = $state(false);
 	let templateError = $state('');
+
+	let modalGroups: Group[] = $state([]);
+	let modalUsers: User[] = $state([]);
+	let modalPermissionTypes: PermissionType[] = $state([]);
+	let modalDataLoaded = false;
+	let loadingInstances = $state(true);
 
 	let isDeployModalOpen = $state(false);
 
@@ -276,10 +283,7 @@
 			return inst?.sync_status === 'orphaned';
 		}).length;
 
-		let promptMsg = `Are you sure you want to delete <strong>${toDelete.length} instances</strong>?`;
-		if (orphanedCount > 0) {
-			promptMsg = `Are you sure you want to delete <strong>${toDelete.length} instances</strong>?<br/><br/><span class="text-sm font-semibold text-amber-400">Includes ${orphanedCount} orphaned instances</span>`;
-		}
+		// No unused promptMsg variable
 
 		deleteModalState = {
 			isOpen: true,
@@ -300,23 +304,30 @@
 		isBatchActionRunning = false;
 	}
 
+	async function prefetchDeployData() {
+		if (modalDataLoaded || loadingTemplates) return;
+		loadingTemplates = true;
+
+		try {
+			const result = await preloadData('/dashboard/deploy');
+			if (result.type === 'loaded' && result.status === 200) {
+				const d = result.data;
+				templates = d.templates || [];
+				templateError = d.templateError || '';
+				modalGroups = d.groups || [];
+				modalUsers = d.users || [];
+				modalPermissionTypes = d.permissionTypes || [];
+				modalDataLoaded = true;
+			}
+		} catch (e) {
+			console.error('Failed to preload deployment data:', e);
+		} finally {
+			loadingTemplates = false;
+		}
+	}
+
 	onMount(() => {
 		const loadData = async () => {
-			// Fetch templates
-			try {
-				const res = await fetch('/api/pve/templates');
-				const data = await res.json();
-				if (data.error) {
-					templateError = data.error;
-				} else {
-					templates = data.templates || [];
-				}
-			} catch (e) {
-				templateError = e instanceof Error ? e.message : String(e);
-			} finally {
-				loadingTemplates = false;
-			}
-
 			// Fetch existing instances
 			try {
 				const res = await fetch('/api/pve/instances');
@@ -328,6 +339,8 @@
 				}
 			} catch (e) {
 				console.error('Failed to fetch instances:', e);
+			} finally {
+				loadingInstances = false;
 			}
 		};
 
@@ -369,7 +382,11 @@
 		<div class="flex flex-wrap items-center gap-4">
 			{#if data.user.role === 'admin'}
 				<button
-					onclick={() => (isDeployModalOpen = true)}
+					onmouseenter={prefetchDeployData}
+					onclick={() => {
+						isDeployModalOpen = true;
+						prefetchDeployData();
+					}}
 					class="flex h-10 items-center justify-center rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:bg-indigo-500 active:scale-95 cursor-pointer"
 				>
 					Deploy Instance
@@ -387,131 +404,138 @@
 
 
 	<!-- Instances Table Section -->
-	<DataTable
-		class="mt-12"
-		columns={dashboardColumns}
-		rows={instances}
-		selectable
-		selectedIds={selectedInstances}
-		getRowId={(i) => i.id}
-		isAllSelected={allSelected}
-		onSelectAll={(checked) => (selectedInstances = checked ? instances.map((i) => i.id) : [])}
-		onSelectRow={(id, checked) => {
-			if (checked) selectedInstances = [...selectedInstances, id];
-			else selectedInstances = selectedInstances.filter((i) => i !== id);
-		}}
-		emptyMessage="No active instances."
-	>
-	{#snippet header()}
-		<div class="flex flex-col gap-6 border-b border-gray-700 bg-gray-800/50 px-8 py-6 md:flex-row md:items-center md:justify-between">
-			<div>
-				<h3 class="text-xl font-extrabold text-white">Active Instances</h3>
-				<span class="mt-1 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-					<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-					</svg>
-					Refreshed every 10 seconds
-				</span>
-			</div>
-			{#if selectedInstances.length > 0}
-				<div class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-700 bg-gray-900/50 p-2">
-					<span class="px-3 text-sm font-bold text-gray-400">{selectedInstances.length} Selected</span>
-					<button onclick={() => performBatchAction('start')} disabled={isBatchActionRunning} class="rounded-lg bg-emerald-500/20 px-4 py-2 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500 hover:text-white disabled:opacity-50">Start</button>
-					<button onclick={() => performBatchAction('stop')} disabled={isBatchActionRunning} class="rounded-lg bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-400 transition hover:bg-amber-500 hover:text-white disabled:opacity-50">Stop</button>
-					{#if data.user.role === 'admin' || selectedInstances.some(id => instances.find(i => i.id === id)?.permissions?.delete)}
-						<button onclick={deleteBatchInstances} disabled={isBatchActionRunning} class="rounded-lg bg-red-500/20 px-4 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500 hover:text-white disabled:opacity-50">Delete</button>
-					{/if}
-				</div>
-
-			{/if}
+	{#if loadingInstances}
+		<div class="mt-12 flex flex-col items-center justify-center rounded-2xl border border-gray-800 bg-gray-800/50 p-20 text-center shadow-2xl backdrop-blur-sm">
+			<div class="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+			<span class="text-lg font-medium text-gray-300">Loading Active Instances...</span>
 		</div>
-	{/snippet}
+	{:else}
+		<DataTable
+			class="mt-12"
+			columns={dashboardColumns}
+			rows={instances}
+			selectable
+			selectedIds={selectedInstances}
+			getRowId={(i) => i.id}
+			isAllSelected={allSelected}
+			onSelectAll={(checked) => (selectedInstances = checked ? instances.map((i) => i.id) : [])}
+			onSelectRow={(id, checked) => {
+				if (checked) selectedInstances = [...selectedInstances, id];
+				else selectedInstances = selectedInstances.filter((i) => i !== id);
+			}}
+			emptyMessage="No active instances."
+		>
+		{#snippet header()}
+			<div class="flex flex-col gap-6 border-b border-gray-700 bg-gray-800/50 px-8 py-6 md:flex-row md:items-center md:justify-between">
+				<div>
+					<h3 class="text-xl font-extrabold text-white">Active Instances</h3>
+					<span class="mt-1 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+						<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+						Refreshed every 10 seconds
+					</span>
+				</div>
+				{#if selectedInstances.length > 0}
+					<div class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-700 bg-gray-900/50 p-2">
+						<span class="px-3 text-sm font-bold text-gray-400">{selectedInstances.length} Selected</span>
+						<button onclick={() => performBatchAction('start')} disabled={isBatchActionRunning} class="rounded-lg bg-emerald-500/20 px-4 py-2 text-xs font-bold text-emerald-400 transition hover:bg-emerald-500 hover:text-white disabled:opacity-50">Start</button>
+						<button onclick={() => performBatchAction('stop')} disabled={isBatchActionRunning} class="rounded-lg bg-amber-500/20 px-4 py-2 text-xs font-bold text-amber-400 transition hover:bg-amber-500 hover:text-white disabled:opacity-50">Stop</button>
+						{#if data.user.role === 'admin' || selectedInstances.some(id => instances.find(i => i.id === id)?.permissions?.delete)}
+							<button onclick={deleteBatchInstances} disabled={isBatchActionRunning} class="rounded-lg bg-red-500/20 px-4 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500 hover:text-white disabled:opacity-50">Delete</button>
+						{/if}
+					</div>
 
-	{#snippet row(inst)}
-		<td class="px-8 py-4 text-center">
-			<div class="flex justify-center">
-				{#if inst.sync_status === 'orphaned'}
-					<span class="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.8)]" title="Status: Orphaned / Missing in Proxmox"></span>
-				{:else if inst.status === 'running'}
-					<span class="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]" title="Status: Running"></span>
-				{:else if inst.status === 'stopped'}
-					<span class="h-2.5 w-2.5 rounded-full border border-gray-500 bg-gray-600" title="Status: Stopped"></span>
-				{:else}
-					<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]" title="Status: Loading/Pending"></span>
 				{/if}
 			</div>
-		</td>
-		<td class="px-8 py-4">
-			{#if data.user.role === 'admin' || inst.permissions?.console}
-				<a href="/console/?id={inst.id}" target="_blank" class="font-mono text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline">{inst.id}</a>
-			{:else}
-				<span class="font-mono text-sm font-bold text-gray-600 cursor-not-allowed" title="No console permission">{inst.id}</span>
-			{/if}
-		</td>
-		<td class="px-8 py-4 font-bold text-gray-300">{inst.vmid}</td>
-		<td class="px-8 py-4">
-			<span class="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[10px] font-black tracking-tight uppercase {inst.type === 'qemu' ? 'text-sky-400' : 'text-fuchsia-400'}">
-				{inst.type}
-			</span>
-		</td>
-		<td class="px-8 py-4">
-			{#if inst.ip}
-				<span class="font-mono text-xs font-semibold text-gray-300">{inst.ip}</span>
-			{:else if inst.status === 'running'}
-				<span class="flex items-center gap-2 text-xs font-medium text-gray-500 italic">
-					<div class="h-1 w-1 animate-bounce rounded-full bg-gray-600"></div>
-					Fetching IP...
-				</span>
-			{:else}
-				<span class="text-xs text-gray-600">—</span>
-			{/if}
-		</td>
-		{#if showControls}
+		{/snippet}
+
+		{#snippet row(inst)}
+			<td class="px-8 py-4 text-center">
+				<div class="flex justify-center">
+					{#if inst.sync_status === 'orphaned'}
+						<span class="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.8)]" title="Status: Orphaned / Missing in Proxmox"></span>
+					{:else if inst.status === 'running'}
+						<span class="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]" title="Status: Running"></span>
+					{:else if inst.status === 'stopped'}
+						<span class="h-2.5 w-2.5 rounded-full border border-gray-500 bg-gray-600" title="Status: Stopped"></span>
+					{:else}
+						<span class="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]" title="Status: Loading/Pending"></span>
+					{/if}
+				</div>
+			</td>
 			<td class="px-8 py-4">
-				<div class="flex items-center justify-center gap-3">
-					{#if data.user.role === 'admin' || inst.permissions?.power}
+				{#if data.user.role === 'admin' || inst.permissions?.console}
+					<a href="/console?id={inst.id}" target="_blank" class="font-mono text-sm font-bold text-indigo-400 hover:text-indigo-300 hover:underline">{inst.id}</a>
+				{:else}
+					<span class="font-mono text-sm font-bold text-gray-600 cursor-not-allowed" title="No console permission">{inst.id}</span>
+				{/if}
+			</td>
+			<td class="px-8 py-4 font-bold text-gray-300">{inst.vmid}</td>
+			<td class="px-8 py-4">
+				<span class="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[10px] font-black tracking-tight uppercase {inst.type === 'qemu' ? 'text-sky-400' : 'text-fuchsia-400'}">
+					{inst.type}
+				</span>
+			</td>
+			<td class="px-8 py-4">
+				{#if inst.ip}
+					<span class="font-mono text-xs font-semibold text-gray-300">{inst.ip}</span>
+				{:else if inst.status === 'running'}
+					<span class="flex items-center gap-2 text-xs font-medium text-gray-500 italic">
+						<div class="h-1 w-1 animate-bounce rounded-full bg-gray-600"></div>
+						Fetching IP...
+					</span>
+				{:else}
+					<span class="text-xs text-gray-600">—</span>
+				{/if}
+			</td>
+			{#if showControls}
+				<td class="px-8 py-4">
+					<div class="flex items-center justify-center gap-3">
+						{#if data.user.role === 'admin' || inst.permissions?.power}
+							<button
+								onclick={() => performAction(inst.id, 'start')}
+								disabled={inst.status === 'running' || inst.status === 'loading'}
+								class="flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 transition-all hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+								title="Start Instance"
+							>
+								<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z"/></svg>
+							</button>
+							<button
+								onclick={() => performAction(inst.id, 'stop')}
+								disabled={inst.status === 'stopped' || inst.status === 'loading'}
+								class="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-500 transition-all hover:bg-amber-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+								title="Stop Instance"
+							>
+								<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>
+							</button>
+						{:else}
+							<div class="h-9 w-20"></div>
+						{/if}
+					</div>
+				</td>
+			{/if}
+			{#if showRemove}
+				<td class="px-8 py-4 text-right">
+					{#if data.user.role === 'admin' || inst.permissions?.delete}
 						<button
-							onclick={() => performAction(inst.id, 'start')}
-							disabled={inst.status === 'running' || inst.status === 'loading'}
-							class="flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 transition-all hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-							title="Start Instance"
+							onclick={() => deleteInstance(inst.id)}
+							disabled={inst.status !== 'stopped' && inst.sync_status !== 'orphaned'}
+							class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+							title={inst.status !== 'stopped' && inst.sync_status !== 'orphaned' ? 'Only stopped or orphaned instances can be deleted' : 'Permanent Delete'}
 						>
-							<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4.516 3.848a.5.5 0 0 1 .759-.424l11 7a.5.5 0 0 1 0 .848l-11 7a.5.5 0 0 1-.759-.424V3.848Z"/></svg>
-						</button>
-						<button
-							onclick={() => performAction(inst.id, 'stop')}
-							disabled={inst.status === 'stopped' || inst.status === 'loading'}
-							class="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-500 transition-all hover:bg-amber-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-							title="Stop Instance"
-						>
-							<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5h10v10H5z"/></svg>
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+							</svg>
 						</button>
 					{:else}
-						<div class="h-9 w-20"></div>
+						<div class="h-9 w-9"></div>
 					{/if}
-				</div>
-			</td>
-		{/if}
-		{#if showRemove}
-			<td class="px-8 py-4 text-right">
-				{#if data.user.role === 'admin' || inst.permissions?.delete}
-					<button
-						onclick={() => deleteInstance(inst.id)}
-						disabled={inst.status !== 'stopped' && inst.sync_status !== 'orphaned'}
-						class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
-						title={inst.status !== 'stopped' && inst.sync_status !== 'orphaned' ? 'Only stopped or orphaned instances can be deleted' : 'Permanent Delete'}
-					>
-						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-						</svg>
-					</button>
-				{:else}
-					<div class="h-9 w-9"></div>
-				{/if}
-			</td>
-		{/if}
-	{/snippet}
-</DataTable>
+				</td>
+			{/if}
+		{/snippet}
+		</DataTable>
+	{/if}
 </div>
 
 <ConfirmDialog {...confirmState} />
@@ -533,6 +557,10 @@
 	{templates}
 	isLoadingTemplates={loadingTemplates}
 	templateError={templateError}
+	groups={modalGroups}
+	users={modalUsers}
+	permissionTypes={modalPermissionTypes}
+	isLoadingData={loadingTemplates}
 	onClose={() => (isDeployModalOpen = false)}
 	onDeployed={handleDeployed}
 />
