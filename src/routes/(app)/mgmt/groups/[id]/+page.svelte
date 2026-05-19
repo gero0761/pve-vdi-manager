@@ -311,7 +311,7 @@
 							<h3 class="text-sm font-bold text-white">Instance Permissions</h3>
 						</div>
 						<div class="divide-y divide-gray-700/50">
-							{#each data.groupPerms as perm}
+							{#each data.groupPerms as perm (perm.instance_id + ':' + perm.permission_type_id)}
 								<div class="flex items-center justify-between px-6 py-4 transition-all hover:bg-white/2">
 									<div class="flex items-center gap-4">
 										<div class="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">
@@ -342,8 +342,8 @@
 										<button 
 											type="submit" 
 											class="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500 hover:text-white shadow-lg shadow-red-500/5 transition-all disabled:opacity-20 flex items-center gap-2" 
-											disabled={perm.isProtected || !!processingPermissionId}
-											title={perm.isProtected ? "Cannot revoke system-managed permissions" : ""}
+											disabled={perm.isProtected || data.group.type?.is_protected || !!processingPermissionId}
+											title={perm.isProtected || data.group.type?.is_protected ? "Cannot revoke system-managed permissions" : ""}
 										>
 											{#if processingPermissionId === `${perm.instance_id}:${perm.permission_type_id}`}
 												<SpinningCircle size="h-3 w-3" color="text-red-400" />
@@ -358,41 +358,50 @@
 								</div>
 							{/each}
 						</div>
-					</div>					<div class="rounded-2xl border border-gray-800 bg-gray-800 p-6 shadow-xl">
-						<h3 class="mb-4 text-sm font-bold text-white">Grant New Permission</h3>
-						<form method="POST" action="?/grantPermission" use:enhance={() => {
-							isGrantingPermission = true;
-							return async ({ update }) => {
-								isGrantingPermission = false;
-								await update();
-							};
-						}} class="flex flex-wrap items-end gap-4">
-							<div class="flex-1 min-w-[200px] space-y-2">
-								<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500" for="grantInstanceSelect">Select Instance</label>
-								<select id="grantInstanceSelect" name="instanceId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
-									{#each data.allInstances as inst (inst.id)}
-										<option value={inst.id}>VM {inst.vmid} ({inst.node})</option>
-									{/each}
-								</select>
-							</div>
-							<div class="flex-1 min-w-[150px] space-y-2">
-								<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500" for="grantTypeSelect">Permission Type</label>
-								<select id="grantTypeSelect" name="permissionTypeId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
-									{#each data.permissionTypes as type (type.id)}
-										<option value={type.id}>{type.name} - {type.description}</option>
-									{/each}
-								</select>
-							</div>
-							<button type="submit" disabled={isGrantingPermission} class="rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-emerald-500 transition-all disabled:opacity-50 min-w-[100px] flex justify-center items-center gap-2">
-								{#if isGrantingPermission}
-									<SpinningCircle size="h-4 w-4" color="text-white" />
-									Granting...
-								{:else}
-									Grant
-								{/if}
-							</button>
-						</form>
 					</div>
+					{#if !data.group.type?.is_protected}
+						<div class="rounded-2xl border border-gray-800 bg-gray-800 p-6 shadow-xl">
+							<h3 class="mb-4 text-sm font-bold text-white">Grant New Permission</h3>
+							<form method="POST" action="?/grantPermission" use:enhance={() => {
+								isGrantingPermission = true;
+								return async ({ update }) => {
+									isGrantingPermission = false;
+									await update();
+								};
+							}} class="flex flex-wrap items-end gap-4">
+								<div class="flex-1 min-w-[200px] space-y-2">
+									<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500" for="grantInstanceSelect">Select Instance</label>
+									<select id="grantInstanceSelect" name="instanceId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
+										{#each data.allInstances as inst (inst.id)}
+											<option value={inst.id}>VM {inst.vmid} ({inst.node})</option>
+										{/each}
+									</select>
+								</div>
+								<div class="flex-1 min-w-[150px] space-y-2">
+									<label class="block text-[10px] font-black uppercase tracking-widest text-gray-500" for="grantTypeSelect">Permission Type</label>
+									<select id="grantTypeSelect" name="permissionTypeId" required disabled={isGrantingPermission} class="w-full rounded-lg border-gray-700 bg-gray-900 text-sm text-gray-200 focus:border-emerald-500 disabled:opacity-50">
+										{#each data.permissionTypes as type (type.id)}
+											<option value={type.id}>{type.name} - {type.description}</option>
+										{/each}
+									</select>
+								</div>
+								<button type="submit" disabled={isGrantingPermission} class="rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-emerald-500 transition-all disabled:opacity-50 min-w-[100px] flex justify-center items-center gap-2">
+									{#if isGrantingPermission}
+										<SpinningCircle size="h-4 w-4" color="text-white" />
+										Granting...
+									{:else}
+										Grant
+									{/if}
+								</button>
+							</form>
+						</div>
+					{:else}
+						<div class="rounded-2xl border border-gray-800 bg-gray-800 p-6 shadow-xl text-center">
+							<p class="text-xs text-gray-400 italic">
+								Permissions of system-protected groups are automatically managed and cannot be modified.
+							</p>
+						</div>
+					{/if}
 				</section>
 			{/if}
 		</div>
