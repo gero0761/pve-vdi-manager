@@ -6,7 +6,9 @@ import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
-	const targetUrl = new URL(env.PVE_API_URL || 'http://localhost:8006').origin;
+	const baseUrls = (env.PVE_API_URL || 'http://localhost:8006').split(',').map((url: string) => url.trim().replace(/\/+$/, ''));
+	const defaultTarget = baseUrls[0];
+	const targetUrl = new URL(defaultTarget).origin;
 
 	return {
 		plugins: [tailwindcss(), sveltekit()],
@@ -14,6 +16,13 @@ export default defineConfig(({ mode }) => {
 			proxy: {
 				'/api2': {
 					target: targetUrl,
+					router: () => {
+						const activeUrl = (globalThis as any).__activePveUrl;
+						if (activeUrl) {
+							return new URL(activeUrl).origin;
+						}
+						return targetUrl;
+					},
 					ws: true,
 					secure: false, // Wichtig für selbstsignierte Zertifikate
 					changeOrigin: true,
@@ -23,23 +32,25 @@ export default defineConfig(({ mode }) => {
 					configure: (proxy) => {
 						// Für normale API-Calls
 						proxy.on('proxyReq', (proxyReq) => {
-							const targetHost = new URL(targetUrl).host;
+							const activeUrl = (globalThis as any).__activePveUrl || defaultTarget;
+							const targetHost = new URL(activeUrl).host;
 							proxyReq.setHeader(
 								'Authorization',
 								`PVEAPIToken=${env.PVE_TOKEN_ID}=${env.PVE_SECRET}`
 							);
-							proxyReq.setHeader('Origin', targetUrl);
+							proxyReq.setHeader('Origin', new URL(activeUrl).origin);
 							proxyReq.setHeader('Host', targetHost);
 						});
 
 						proxy.on('proxyReqWs', (proxyReq, req) => {
+							const activeUrl = (globalThis as any).__activePveUrl || defaultTarget;
+							const targetHost = new URL(activeUrl).host;
 							proxyReq.setHeader(
 								'Authorization',
 								`PVEAPIToken=${env.PVE_TOKEN_ID}=${env.PVE_SECRET}`
 							);
-							proxyReq.setHeader('Origin', targetUrl);
+							proxyReq.setHeader('Origin', new URL(activeUrl).origin);
 							// Zwinge den Host-Header auf die Ziel-URL (Proxmox-IP)
-							const targetHost = new URL(targetUrl).host;
 							proxyReq.setHeader('Host', targetHost);
 
 							// Wir extrahieren das Ticket aus der URL des Requests

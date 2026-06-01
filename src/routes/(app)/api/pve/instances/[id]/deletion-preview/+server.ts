@@ -30,8 +30,8 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 	const candidateGroups = [];
 
 	for (const groupId of candidateGroupIds) {
-		const group = await db.getGroupById(groupId);
-		if (!group || group.protected === 1) continue;
+		const group = await db.getGroupDetailedById(groupId);
+		if (!group || group.type.is_protected) continue;
 
 		// Cleanup Logic (Same as in DELETE handler)
 		

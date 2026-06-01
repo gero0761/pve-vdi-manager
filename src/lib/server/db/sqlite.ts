@@ -167,6 +167,10 @@ export const sqliteAdapter: DatabaseAdapter = {
 		db.prepare('UPDATE instances SET sync_status = ? WHERE id = ?').run(status, id);
 		return Promise.resolve();
 	},
+	updateInstanceNode(id: string, node: string): Promise<void> {
+		db.prepare('UPDATE instances SET node = ? WHERE id = ?').run(node, id);
+		return Promise.resolve();
+	},
 
 	// User Management
 	getUserByUsername(username: string): Promise<User | undefined> {

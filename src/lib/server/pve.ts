@@ -3,6 +3,12 @@ const { PVE_API_URL, PVE_TOKEN_ID, PVE_SECRET, PVE_PASSWORD, PVE_START_ID } = en
 
 const startID = PVE_START_ID ? parseInt(PVE_START_ID, 10) : 1000;
 
+const baseUrls = (PVE_API_URL || '').split(',').map((url) => url.trim().replace(/\/+$/, ''));
+
+if (!(globalThis as any).__activePveUrl && baseUrls.length > 0) {
+	(globalThis as any).__activePveUrl = baseUrls[0];
+}
+
 export async function pveFetch(
 	endpoint: string,
 	options: RequestInit = {},
@@ -10,42 +16,70 @@ export async function pveFetch(
 ) {
 	process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // For TLS ignore
 
-	const baseUrl = PVE_API_URL.replace(/\/+$/, '');
-
 	const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
-	const url = path.startsWith('/api2/json') ? `${baseUrl}${path}` : `${baseUrl}/api2/json${path}`;
+	let lastError: any = null;
 
-	/* console.log(
-		'[PVE Fetch]: \n',
-		'Base URL: ' + baseUrl + '\n',
-		'Path: ' + path + '\n',
-		'Endpoint: ' + endpoint + '\n',
-		'URL: ' + url + '\n',
-		'Auth Method: ' + (auth === 'none' ? 'None' : auth ? 'Ticket' : 'Token') + '\n'
-	); */
+	// Try each URL in the list if there are network issues
+	for (let attempt = 0; attempt < baseUrls.length; attempt++) {
+		const currentBaseUrl = (globalThis as any).__activePveUrl || baseUrls[0];
+		const url = path.startsWith('/api2/json') ? `${currentBaseUrl}${path}` : `${currentBaseUrl}/api2/json${path}`;
 
-	const headers: Record<string, string> = {
-		...((options.headers as Record<string, string>) || {})
-	};
+		try {
+			const headers: Record<string, string> = {
+				...((options.headers as Record<string, string>) || {})
+			};
 
-	if (auth === 'none') {
-		// No auth headers
-	} else if (auth && typeof auth === 'object') {
-		headers['Cookie'] = `PVEAuthCookie=${auth.ticket}`;
-		if (auth.csrfToken) {
-			headers['CSRFPreventionToken'] = auth.csrfToken;
+			if (auth === 'none') {
+				// No auth headers
+			} else if (auth && typeof auth === 'object') {
+				headers['Cookie'] = `PVEAuthCookie=${auth.ticket}`;
+				if (auth.csrfToken) {
+					headers['CSRFPreventionToken'] = auth.csrfToken;
+				}
+			} else {
+				headers['Authorization'] = `PVEAPIToken=${PVE_TOKEN_ID}=${PVE_SECRET}`;
+			}
+
+			const response = await fetch(url, { ...options, headers });
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(`PVE API Error (${response.status}): ${text}`);
+			}
+			return response;
+		} catch (err: any) {
+			lastError = err;
+
+			// Check if this error is a connection/network failure
+			const isNetworkError =
+				err.message &&
+				(err.message.includes('fetch failed') ||
+					err.message.includes('ECONNREFUSED') ||
+					err.message.includes('EHOSTUNREACH') ||
+					err.message.includes('ETIMEDOUT') ||
+					err.message.includes('ENOTFOUND') ||
+					err.code === 'ECONNREFUSED' ||
+					err.code === 'EHOSTUNREACH' ||
+					err.code === 'ETIMEDOUT' ||
+					err.code === 'ENOTFOUND');
+
+			if (isNetworkError && baseUrls.length > 1) {
+				const currentIndex = baseUrls.indexOf(currentBaseUrl);
+				const nextIndex = (currentIndex === -1 ? 0 : currentIndex + 1) % baseUrls.length;
+				const nextUrl = baseUrls[nextIndex];
+				
+				console.warn(
+					`[PVE Fetch] Connection failed to ${currentBaseUrl}. Swapping active node to: ${nextUrl}`
+				);
+				(globalThis as any).__activePveUrl = nextUrl;
+			} else {
+				// If it's a regular API error (e.g. 400, 403, 404, 500), do not retry another node
+				throw err;
+			}
 		}
-	} else {
-		headers['Authorization'] = `PVEAPIToken=${PVE_TOKEN_ID}=${PVE_SECRET}`;
 	}
 
-	const response = await fetch(url, { ...options, headers });
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`PVE API Error (${response.status}): ${text}`);
-	}
-	return response;
+	throw lastError;
 }
 
 export async function getNextVmid(startId: number = startID): Promise<number> {

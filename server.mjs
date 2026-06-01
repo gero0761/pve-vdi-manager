@@ -17,13 +17,22 @@ if (!PVE_TARGET) {
 	console.error('[ERROR] PVE_API_URL is not defined');
 	process.exit(1);
 }
-const targetUrl = new URL(PVE_TARGET).origin;
-const targetHost = new URL(PVE_TARGET).host;
+
+const baseUrls = PVE_TARGET.split(',').map((url) => url.trim().replace(/\/+$/, ''));
+const defaultTarget = baseUrls[0];
+const targetUrl = new URL(defaultTarget).origin;
 const PVE_TOKEN = `PVEAPIToken=${process.env.PVE_TOKEN_ID}=${process.env.PVE_SECRET}`;
 
 // Proxy-Konfiguration
 const pveProxy = createProxyMiddleware({
 	target: targetUrl,
+	router: () => {
+		const activeUrl = globalThis.__activePveUrl;
+		if (activeUrl) {
+			return new URL(activeUrl).origin;
+		}
+		return targetUrl;
+	},
 	changeOrigin: true,
 	secure: false,
 	ws: true,
@@ -34,16 +43,20 @@ const pveProxy = createProxyMiddleware({
 	on: {
 		// 1. Logik für normale API-Calls (proxyReq)
 		proxyReq: (proxyReq, req, res) => {
+			const activeUrl = globalThis.__activePveUrl || defaultTarget;
+			const targetHost = new URL(activeUrl).host;
 			proxyReq.setHeader('Authorization', PVE_TOKEN);
-			proxyReq.setHeader('Origin', targetUrl);
+			proxyReq.setHeader('Origin', new URL(activeUrl).origin);
 			proxyReq.setHeader('Host', targetHost);
 		},
 
 		// 2. Logik für WebSockets (proxyReqWs)
 		proxyReqWs: (proxyReq, req, socket, options, head) => {
+			const activeUrl = globalThis.__activePveUrl || defaultTarget;
+			const targetHost = new URL(activeUrl).host;
 			// Standard-Header für PVE
 			proxyReq.setHeader('Authorization', PVE_TOKEN);
-			proxyReq.setHeader('Origin', targetUrl);
+			proxyReq.setHeader('Origin', new URL(activeUrl).origin);
 			proxyReq.setHeader('Host', targetHost);
 
 			// Ticket-Logik (exakt wie in deiner vite.config.ts)
@@ -61,7 +74,7 @@ const pveProxy = createProxyMiddleware({
 				req.url = cleanPath;
 				proxyReq.path = cleanPath;
 
-				console.log(`[Proxy] Forwarding to PVE: ${cleanPath}`);
+				console.log(`[Proxy] Forwarding to PVE node (${targetHost}): ${cleanPath}`);
 			}
 		},
 

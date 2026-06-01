@@ -83,6 +83,12 @@ export interface DatabaseAdapter {
 	* @param {string} status - The sync status of the VDI instance (synced | orphaned)
 	*/
 	updateInstanceSyncStatus(id: string, status: string): Promise<void>;
+	/*
+	* Updates the node of a VDI instance
+	* @param {string} id - The alpha-id of the VDI instance
+	* @param {string} node - The new Proxmox node name
+	*/
+	updateInstanceNode(id: string, node: string): Promise<void>;
 	
 	// User Management
 	/*

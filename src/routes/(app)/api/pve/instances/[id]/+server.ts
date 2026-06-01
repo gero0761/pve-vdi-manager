@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { pveFetch } from '$lib/server/pve';
 import { runSyncJob } from '$lib/server/sync.js';
+import { executeWithHaRetry } from '$lib/server/ha';
 
 // GET /api/pve/instances/[id] -> Get current status and IP from Proxmox
 export async function GET({ params, locals }) {
@@ -21,51 +22,54 @@ export async function GET({ params, locals }) {
 	}
 
 	try {
-		const statusRes = await pveFetch(
-			`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/current`
-		);
-		const statusData = await statusRes.json();
-		const status = statusData.data.status;
+		const { status, ip } = await executeWithHaRetry(instance, async (node) => {
+			const statusRes = await pveFetch(
+				`/nodes/${node}/${instance.type}/${instance.vmid}/status/current`
+			);
+			const statusData = await statusRes.json();
+			const status = statusData.data.status;
 
-		let ip = null;
+			let ip = null;
 
-		if (status === 'running') {
-			try {
-				if (instance.type === 'lxc') {
-					const netRes = await pveFetch(`/nodes/${instance.node}/lxc/${instance.vmid}/interfaces`);
-					const netData = await netRes.json();
-					// Find first non-loopback IPv4
-					const iface = netData.data.find(
-						(i: any) => i.inet && !i.inet.startsWith('127.') && !i.inet.startsWith('::')
-					);
-					if (iface) {
-						ip = iface.inet.split('/')[0];
-					}
-				} else if (instance.type === 'qemu') {
-					const agentRes = await pveFetch(
-						`/nodes/${instance.node}/qemu/${instance.vmid}/agent/network-get-interfaces`
-					);
-					const agentData = await agentRes.json();
+			if (status === 'running') {
+				try {
+					if (instance.type === 'lxc') {
+						const netRes = await pveFetch(`/nodes/${node}/lxc/${instance.vmid}/interfaces`);
+						const netData = await netRes.json();
+						// Find first non-loopback IPv4
+						const iface = netData.data.find(
+							(i: any) => i.inet && !i.inet.startsWith('127.') && !i.inet.startsWith('::')
+						);
+						if (iface) {
+							ip = iface.inet.split('/')[0];
+						}
+					} else if (instance.type === 'qemu') {
+						const agentRes = await pveFetch(
+							`/nodes/${node}/qemu/${instance.vmid}/agent/network-get-interfaces`
+						);
+						const agentData = await agentRes.json();
 
-					// Proxmox agent calls usually return data in .data.result
-					const interfaces = agentData.data?.result || agentData.data;
+						// Proxmox agent calls usually return data in .data.result
+						const interfaces = agentData.data?.result || agentData.data;
 
-					if (interfaces && Array.isArray(interfaces)) {
-						for (const iface of interfaces) {
-							if (iface.name === 'lo') continue;
-							const addr = iface['ip-addresses']?.find((a: any) => a['ip-address-type'] === 'ipv4');
-							if (addr && !addr['ip-address'].startsWith('127.')) {
-								ip = addr['ip-address'];
-								break;
+						if (interfaces && Array.isArray(interfaces)) {
+							for (const iface of interfaces) {
+								if (iface.name === 'lo') continue;
+								const addr = iface['ip-addresses']?.find((a: any) => a['ip-address-type'] === 'ipv4');
+								if (addr && !addr['ip-address'].startsWith('127.')) {
+									ip = addr['ip-address'];
+									break;
+								}
 							}
 						}
 					}
+				} catch (e) {
+					// Guest agent might not be running or supported
+					//console.warn(`Could not fetch IP for ${instance.id}:`, e);
 				}
-			} catch (e) {
-				// Guest agent might not be running or supported
-				//console.warn(`Could not fetch IP for ${instance.id}:`, e);
 			}
-		}
+			return { status, ip };
+		});
 
 		return json({ status, ip });
 	} catch (err) {
@@ -92,8 +96,10 @@ export async function POST({ params, request, locals }) {
 	}
 
 	try {
-		await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/${action}`, {
-			method: 'POST'
+		await executeWithHaRetry(instance, async (node) => {
+			await pveFetch(`/nodes/${node}/${instance.type}/${instance.vmid}/status/${action}`, {
+				method: 'POST'
+			});
 		});
 		return json({ success: true });
 	} catch (err) {
@@ -125,8 +131,10 @@ export async function DELETE({ params, request, locals }) {
 		if (instance.sync_status !== 'orphaned') {
 			// 1. Stop if running (Proxmox requires stopped for deletion)
 			try {
-				await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}/status/stop`, {
-					method: 'POST'
+				await executeWithHaRetry(instance, async (node) => {
+					await pveFetch(`/nodes/${node}/${instance.type}/${instance.vmid}/status/stop`, {
+						method: 'POST'
+					});
 				});
 				// Wait a bit for it to stop
 				await new Promise((r) => setTimeout(r, 1000));
@@ -135,8 +143,10 @@ export async function DELETE({ params, request, locals }) {
 			}
 
 			// 2. Delete from Proxmox
-			await pveFetch(`/nodes/${instance.node}/${instance.type}/${instance.vmid}`, {
-				method: 'DELETE'
+			await executeWithHaRetry(instance, async (node) => {
+				await pveFetch(`/nodes/${node}/${instance.type}/${instance.vmid}`, {
+					method: 'DELETE'
+				});
 			});
 		}
 
@@ -154,8 +164,8 @@ export async function DELETE({ params, request, locals }) {
 				continue;
 			}
 
-			const group = await db.getGroupById(groupId);
-			if (!group || group.protected === 1) continue;
+			const group = await db.getGroupDetailedById(groupId);
+			if (!group || group.type.is_protected) continue;
 
 			// Check if group has permissions for OTHER instances
 			const remainingPerms = await db.getPermissionsByGroup(groupId);

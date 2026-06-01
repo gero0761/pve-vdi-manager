@@ -234,6 +234,9 @@ export const mysqlAdapter: DatabaseAdapter = {
 	async updateInstanceSyncStatus(id: string, status: string): Promise<void> {
 		await pool.query('UPDATE instances SET sync_status = ? WHERE id = ?', [status, id]);
 	},
+	async updateInstanceNode(id: string, node: string): Promise<void> {
+		await pool.query('UPDATE instances SET node = ? WHERE id = ?', [node, id]);
+	},
 
 	// User Management
 	async getUserByUsername(username: string): Promise<User | undefined> {

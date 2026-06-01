@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { pveFetch, getAccessTicket } from '$lib/server/pve';
 import { db } from '$lib/server/db';
+import { executeWithHaRetry } from '$lib/server/ha';
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const { id } = params;
@@ -27,39 +28,41 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 		}
 	}
 
-	const { vmid, node, type } = instance;
+	const { vmid, type } = instance;
 
 	console.log('Type: ' + type);
 
 	let response;
-	const proxyEndpoint =
-		type === 'lxc'
-			? `/nodes/${node}/${type}/${vmid}/termproxy`
-			: `/nodes/${node}/${type}/${vmid}/vncproxy`;
-
 	let accessTicket = '';
 	let csrfToken = '';
 
 	try {
-		if (type === 'lxc') {
-			// Für LXC brauchen wir ein User Ticket (PVE ticket) für termproxy
-			const { ticket: accessTicketFetch, csrfToken: accessCsrfTokenFetch } =
-				await getAccessTicket();
-			accessTicket = accessTicketFetch;
-			csrfToken = accessCsrfTokenFetch;
-			response = await pveFetch(
-				proxyEndpoint,
-				{
+		response = await executeWithHaRetry(instance, async (currentNode) => {
+			const proxyEndpoint =
+				type === 'lxc'
+					? `/nodes/${currentNode}/${type}/${vmid}/termproxy`
+					: `/nodes/${currentNode}/${type}/${vmid}/vncproxy`;
+
+			if (type === 'lxc') {
+				// Für LXC brauchen wir ein User Ticket (PVE ticket) für termproxy
+				const { ticket: accessTicketFetch, csrfToken: accessCsrfTokenFetch } =
+					await getAccessTicket();
+				accessTicket = accessTicketFetch;
+				csrfToken = accessCsrfTokenFetch;
+				return await pveFetch(
+					proxyEndpoint,
+					{
+						method: 'POST'
+					},
+					{ ticket: accessTicket, csrfToken }
+				);
+			} else {
+				// Für VMs (noVNC) bleibt alles beim Alten (API Token)
+				return await pveFetch(proxyEndpoint, {
 					method: 'POST'
-				},
-				{ ticket: accessTicket, csrfToken }
-			);
-		} else {
-			// Für VMs (noVNC) bleibt alles beim Alten (API Token)
-			response = await pveFetch(proxyEndpoint, {
-				method: 'POST'
-			});
-		}
+				});
+			}
+		});
 	} catch (err) {
 		console.error('Fetch to PVE failed:', err);
 		return json({ error: 'Connection to PVE Server failed (Network Error)' }, { status: 500 });
@@ -97,8 +100,8 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 
 	const connectionUrl =
 		type === 'lxc'
-			? `${protocol}//${host}/api2/json/nodes/${node}/${type}/${vmid}/vncwebsocket?port=${data.port}&vncticket=${encodeURIComponent(data.ticket)}&tmpTicket=${encodeURIComponent(accessTicket)}`
-			: `${protocol}//${host}/api2/json/nodes/${node}/${type}/${vmid}/vncwebsocket?node=${node}&port=${data.port}&vmid=${vmid}&vncticket=${encodeURIComponent(data.ticket)}`;
+			? `${protocol}//${host}/api2/json/nodes/${instance.node}/${type}/${vmid}/vncwebsocket?port=${data.port}&vncticket=${encodeURIComponent(data.ticket)}&tmpTicket=${encodeURIComponent(accessTicket)}`
+			: `${protocol}//${host}/api2/json/nodes/${instance.node}/${type}/${vmid}/vncwebsocket?node=${instance.node}&port=${data.port}&vmid=${vmid}&vncticket=${encodeURIComponent(data.ticket)}`;
 
 	console.log(
 		'[Connection] URL: ' + connectionUrl + '\n',

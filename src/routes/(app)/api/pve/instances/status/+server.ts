@@ -33,7 +33,8 @@ export async function GET({ locals }) {
 				// Filter by pool if configured
 				if (env.PVE_POOL && r.pool !== env.PVE_POOL) continue;
 				
-				resourceMap.set(`${r.node}:${r.type}:${r.vmid}`, {
+				resourceMap.set(`${r.type}:${r.vmid}`, {
+					node: r.node,
 					status: r.status,
 					uptime: r.uptime,
 					cpu: r.cpu,
@@ -47,11 +48,28 @@ export async function GET({ locals }) {
 
 		const statuses: Record<string, any> = {};
 		for (const inst of managedInstances) {
-			const key = `${inst.node}:${inst.type}:${inst.vmid}`;
+			const key = `${inst.type}:${inst.vmid}`;
 			const pveStatus = resourceMap.get(key);
 			
 			if (pveStatus) {
-				statuses[inst.id] = pveStatus;
+				statuses[inst.id] = {
+					status: pveStatus.status,
+					uptime: pveStatus.uptime,
+					cpu: pveStatus.cpu,
+					mem: pveStatus.mem,
+					maxmem: pveStatus.maxmem,
+					netin: pveStatus.netin,
+					netout: pveStatus.netout
+				};
+
+				// Self-healing: if the VM has migrated to a different node, update the DB
+				if (pveStatus.node && pveStatus.node !== inst.node) {
+					console.log(
+						`[Status API] Instance ${inst.id} (VMID: ${inst.vmid}) has migrated from node '${inst.node}' to '${pveStatus.node}'. Updating database.`
+					);
+					await db.updateInstanceNode(inst.id, pveStatus.node);
+					inst.node = pveStatus.node; // update local object
+				}
 			} else {
 				statuses[inst.id] = { status: 'unknown' };
 			}

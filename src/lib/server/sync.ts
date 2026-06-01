@@ -15,35 +15,52 @@ export async function runSyncJob() {
 		const pveMembers = poolData.data?.members || [];
 
 		// Create a quick lookup map from Proxmox
-		const pveMap = new Set(pveMembers.map((m: any) => `${m.type}-${m.vmid}`));
+		const poolMembersMap = new Map();
+		for (const m of pveMembers) {
+			poolMembersMap.set(`${m.type}-${m.vmid}`, m);
+		}
 
 		const dbInstances = await db.getAllInstances();
 
 		let orphanedCount = 0;
 		let syncedCount = 0;
+		let nodeUpdatedCount = 0;
 
 		for (const instance of dbInstances) {
-			const existsInPve = pveMap.has(`${instance.type}-${instance.vmid}`);
+			const pveMember = poolMembersMap.get(`${instance.type}-${instance.vmid}`);
 
-			if (!existsInPve && instance.sync_status !== 'orphaned') {
-				console.log(
-					`[Sync] Instance ${instance.id} (VMID: ${instance.vmid}) not found in Proxmox Pool. Marking as orphaned.`
-				);
-				await db.updateInstanceSyncStatus(instance.id, 'orphaned');
-				orphanedCount++;
-			} else if (existsInPve && instance.sync_status === 'orphaned') {
-				// E.g., someone re-added it back to the pool
-				console.log(
-					`[Sync] Instance ${instance.id} (VMID: ${instance.vmid}) was restored in Proxmox Pool. Marking as synced.`
-				);
-				await db.updateInstanceSyncStatus(instance.id, 'synced');
-				syncedCount++;
+			if (!pveMember) {
+				if (instance.sync_status !== 'orphaned') {
+					console.log(
+						`[Sync] Instance ${instance.id} (VMID: ${instance.vmid}) not found in Proxmox Pool. Marking as orphaned.`
+					);
+					await db.updateInstanceSyncStatus(instance.id, 'orphaned');
+					orphanedCount++;
+				}
+			} else {
+				if (instance.sync_status === 'orphaned') {
+					// E.g., someone re-added it back to the pool
+					console.log(
+						`[Sync] Instance ${instance.id} (VMID: ${instance.vmid}) was restored in Proxmox Pool. Marking as synced.`
+					);
+					await db.updateInstanceSyncStatus(instance.id, 'synced');
+					syncedCount++;
+				}
+
+				// Check if the node has changed
+				if (pveMember.node && pveMember.node !== instance.node) {
+					console.log(
+						`[Sync] Instance ${instance.id} (VMID: ${instance.vmid}) node changed: ${instance.node} -> ${pveMember.node}. Updating database.`
+					);
+					await db.updateInstanceNode(instance.id, pveMember.node);
+					nodeUpdatedCount++;
+				}
 			}
 		}
 
-		if (orphanedCount > 0 || syncedCount > 0) {
+		if (orphanedCount > 0 || syncedCount > 0 || nodeUpdatedCount > 0) {
 			console.log(
-				`[Sync] Completed. Marked ${orphanedCount} as orphaned, restored ${syncedCount} as synced.`
+				`[Sync] Completed. Marked ${orphanedCount} as orphaned, restored ${syncedCount} as synced, updated nodes for ${nodeUpdatedCount} instances.`
 			);
 		}
 	} catch (err) {
