@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { scryptSync, timingSafeEqual } from 'node:crypto';
+import { env } from '$env/dynamic/private';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -9,6 +10,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		const redirectTo = url.searchParams.get('redirectTo') || '/';
 		throw redirect(303, redirectTo);
 	}
+
+	return {
+		allowRegistration: env.DISABLE_PUBLIC_REGISTRATION !== 'true'
+	};
 };
 
 export const actions: Actions = {

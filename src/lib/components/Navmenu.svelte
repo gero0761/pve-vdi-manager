@@ -3,19 +3,24 @@
 	import Github from '$lib/components/Github.svelte';
 	import User from '$lib/components/User.svelte';
 
-	interface User {
+	interface NavUser {
 		username: string;
 		role?: string;
+		permissions?: {
+			userModification: boolean;
+		};
 	}
 
 	let {
 		user = null,
 		pathname = '',
-		variant = 'app'
+		variant = 'app',
+		allowRegistration = true
 	}: {
-		user?: User | null;
+		user?: NavUser | null;
 		pathname?: string;
 		variant?: 'landing' | 'app';
+		allowRegistration?: boolean;
 	} = $props();
 </script>
 
@@ -40,7 +45,7 @@
             >
                 Dashboard
             </a>
-            {#if user && user.role === 'admin'}
+            {#if user && (user.role === 'admin' || user.permissions?.userModification)}
             <a
                 href="/mgmt/users"
                 class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname.startsWith('/mgmt/users')
@@ -49,6 +54,8 @@
             >
                 Users
             </a>
+            {/if}
+            {#if user && user.role === 'admin'}
             <a
                 href="/mgmt/groups"
                 class="rounded-lg px-3 py-2 text-sm font-medium transition-colors {pathname.startsWith('/mgmt/groups')
@@ -75,13 +82,15 @@
                     ? 'text-indigo-500'
                     : 'text-gray-500'}">Dashboard</a
             >
-            {#if user && user.role === 'admin'}
+            {#if user && (user.role === 'admin' || user.permissions?.userModification)}
             <a
                 href="/mgmt/users"
                 class="text-xs font-bold uppercase tracking-widest {pathname.startsWith('/mgmt/users')
                     ? 'text-rose-500'
                     : 'text-gray-500'}">Users</a
             >
+            {/if}
+            {#if user && user.role === 'admin'}
             <a
                 href="/mgmt/groups"
                 class="text-xs font-bold uppercase tracking-widest {pathname.startsWith('/mgmt/groups')
@@ -116,11 +125,13 @@
             </div>
         {:else}
             <div class="flex items-center space-x-4 sm:space-x-8">
+                {#if allowRegistration}
                 <a
                     href="/register"
                     class="text-sm font-medium text-gray-400 transition-colors hover:text-white"
                     >Register</a
                 >
+                {/if}
                 <a
                     href="/login"
                     class="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-medium text-white transition-all hover:bg-indigo-500 shadow-lg shadow-indigo-600/20"

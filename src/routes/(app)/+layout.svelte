@@ -6,7 +6,7 @@
 
 <div class="flex min-h-screen flex-col bg-gray-900 text-white font-sans">
 	<!-- Top App Header -->
-	<Navmenu user={data.user} pathname={page.url.pathname} variant="app" />
+	<Navmenu user={data.user} pathname={page.url.pathname} variant="app" allowRegistration={data.allowRegistration} />
 
 	<!-- Main App Content -->
 	<main class="flex-1">

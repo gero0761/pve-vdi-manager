@@ -84,6 +84,14 @@ if (DB_TYPE === 'sqlite') {
 			FOREIGN KEY (permission_type_id) REFERENCES permission_types(id) ON DELETE CASCADE
 		)
 	`);
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS system_permissions (
+			group_id TEXT NOT NULL,
+			permission_name TEXT NOT NULL,
+			PRIMARY KEY (group_id, permission_name),
+			FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+		)
+	`);
 
 	// Initialize default group types
 	const insertType = db.prepare('INSERT OR IGNORE INTO group_types (id, name, description, is_protected) VALUES (?, ?, ?, ?)');
@@ -100,6 +108,10 @@ if (DB_TYPE === 'sqlite') {
 	insertGroup.run('system-user', 'User', 1, 'Default users group.');
 
 	// Note: Role column is removed. Migration should have been handled in previous versions.
+
+	// Initialize default system permissions
+	const insertSystemPerm = db.prepare('INSERT OR IGNORE INTO system_permissions (group_id, permission_name) VALUES (?, ?)');
+	insertSystemPerm.run('system-admin', 'user-modification');
 
 	// Initialize default permission types
 	const insertPerm = db.prepare('INSERT OR IGNORE INTO permission_types (id, name, description) VALUES (?, ?, ?)');
@@ -445,7 +457,7 @@ export const sqliteAdapter: DatabaseAdapter = {
 		if (permissionName) {
 			query += ` JOIN permission_types pt ON ip.permission_type_id = pt.id `;
 			query += ` WHERE ip.instance_id = ? AND ip.group_id IN (${placeholders}) `;
-			query += ` AND (pt.name = ? pt.name = 'all') `;
+			query += ` AND (pt.name = ? OR pt.name = 'all') `;
 			params.push(instance_id, ...groupIds, permissionName);
 		} else {
 			query += ` WHERE ip.instance_id = ? AND ip.group_id IN (${placeholders}) `;
@@ -456,5 +468,31 @@ export const sqliteAdapter: DatabaseAdapter = {
 		
 		const row = db.prepare(query).get(...params);
 		return row !== undefined;
+	},
+	async hasSystemPermission(userId: string, permissionName: string): Promise<boolean> {
+		const groupIds = await this.getUserGroupIds(userId);
+		if (groupIds.length === 0) return false;
+		const placeholders = groupIds.map(() => '?').join(',');
+		const row = db.prepare(`
+			SELECT 1 FROM system_permissions
+			WHERE permission_name = ? AND group_id IN (${placeholders})
+			LIMIT 1
+		`).get(permissionName, ...groupIds);
+		return row !== undefined;
+	},
+	getSystemPermissionsByGroup(groupId: string): Promise<string[]> {
+		const rows = db.prepare('SELECT permission_name FROM system_permissions WHERE group_id = ?').all(groupId) as { permission_name: string }[];
+		return Promise.resolve(rows.map(r => r.permission_name));
+	},
+	grantSystemPermission(groupId: string, permissionName: string): Promise<void> {
+		db.prepare('INSERT OR IGNORE INTO system_permissions (group_id, permission_name) VALUES (?, ?)').run(groupId, permissionName);
+		return Promise.resolve();
+	},
+	revokeSystemPermission(groupId: string, permissionName: string): Promise<void> {
+		if (groupId === 'system-admin' && permissionName === 'user-modification') {
+			throw new Error('Cannot revoke user-modification permission from system-admin group.');
+		}
+		db.prepare('DELETE FROM system_permissions WHERE group_id = ? AND permission_name = ?').run(groupId, permissionName);
+		return Promise.resolve();
 	}
 };

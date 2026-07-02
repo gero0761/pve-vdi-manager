@@ -45,12 +45,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 			const user = await db.getUserById(session.user_id);
 			if (user) {
 				const groupIds = await db.getUserGroupIds(user.id);
+				const hasUserMod = await db.hasSystemPermission(user.id, 'user-modification');
 				event.locals.user = {
 					id: user.id,
 					username: user.username,
 					first_name: user.first_name,
 					last_name: user.last_name,
-					role: groupIds.includes('system-admin') ? 'admin' : 'user'
+					role: groupIds.includes('system-admin') ? 'admin' : 'user',
+					permissions: {
+						userModification: hasUserMod
+					}
 				};
 			}
 		} else if (session) {
@@ -63,15 +67,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 		throw redirect(303, handleLoginRedirect(event));
 	}
 
-	// Admin-only routes
+	// Route guards
+	const isMgmtUsersRoute = event.url.pathname.startsWith('/mgmt/users');
+	const isMgmtGroupsRoute = event.url.pathname.startsWith('/mgmt/groups');
+
 	const isAdminRoute =
-		event.url.pathname.startsWith('/mgmt') ||
+		isMgmtGroupsRoute ||
 		event.url.pathname.startsWith('/api/pve/tasks') ||
 		event.url.pathname.startsWith('/api/pve/clone') ||
 		event.url.pathname.startsWith('/api/pve/templates');
 
 	if (isAdminRoute && event.locals.user?.role !== 'admin') {
 		throw redirect(303, '/');
+	}
+
+	const isMgmtRoute = event.url.pathname.startsWith('/mgmt');
+	if (isMgmtRoute) {
+		const isAuthorized =
+			event.locals.user?.role === 'admin' ||
+			(isMgmtUsersRoute && event.locals.user?.permissions?.userModification);
+
+		if (!isAuthorized) {
+			throw redirect(303, '/');
+		}
 	}
 
 	// Instance-level granular permission checks

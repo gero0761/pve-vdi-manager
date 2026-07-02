@@ -5,7 +5,7 @@
 
 <div class="flex min-h-screen flex-col bg-gray-900 text-white">
 	<!-- Top Navigation Header -->
-	<Navmenu user={data.user} variant="landing" />
+	<Navmenu user={data.user} variant="landing" allowRegistration={data.allowRegistration} />
 
 	<!-- Main Content Section -->
 	<main class="flex flex-1 flex-col items-center justify-center px-4 pb-12">

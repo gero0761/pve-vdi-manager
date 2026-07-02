@@ -107,6 +107,14 @@ if (DB_TYPE === 'mysql') {
 					FOREIGN KEY (permission_type_id) REFERENCES permission_types(id) ON DELETE CASCADE
 				)
 			`);
+			await connection.query(`
+				CREATE TABLE IF NOT EXISTS system_permissions (
+					group_id VARCHAR(255) NOT NULL,
+					permission_name VARCHAR(255) NOT NULL,
+					PRIMARY KEY (group_id, permission_name),
+					FOREIGN KEY (group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE
+				)
+			`);
 
 			// Initialize default group types
 			await connection.query(`
@@ -126,6 +134,12 @@ if (DB_TYPE === 'mysql') {
 				VALUES
 					('system-admin', 'Admin', 1, 'Default administrators group with full system access.'),
 					('system-user', 'User', 1, 'Default users group.')
+			`);
+
+			// Initialize default system permissions
+			await connection.query(`
+				INSERT IGNORE INTO system_permissions (group_id, permission_name)
+				VALUES ('system-admin', 'user-modification')
 			`);
 
 			// Cleanup: Remove legacy role column if it exists
@@ -533,5 +547,28 @@ export const mysqlAdapter: DatabaseAdapter = {
 		
 		const [rows] = await pool.query(query, params);
 		return (rows as any[]).length > 0;
+	},
+	async hasSystemPermission(userId: string, permissionName: string): Promise<boolean> {
+		const groupIds = await this.getUserGroupIds(userId);
+		if (groupIds.length === 0) return false;
+		const [rows] = await pool.query(`
+			SELECT 1 FROM system_permissions
+			WHERE permission_name = ? AND group_id IN (?)
+			LIMIT 1
+		`, [permissionName, groupIds]);
+		return (rows as any[]).length > 0;
+	},
+	async getSystemPermissionsByGroup(groupId: string): Promise<string[]> {
+		const [rows] = await pool.query('SELECT permission_name FROM system_permissions WHERE group_id = ?', [groupId]);
+		return (rows as any[]).map(r => r.permission_name);
+	},
+	async grantSystemPermission(groupId: string, permissionName: string): Promise<void> {
+		await pool.query('INSERT IGNORE INTO system_permissions (group_id, permission_name) VALUES (?, ?)', [groupId, permissionName]);
+	},
+	async revokeSystemPermission(groupId: string, permissionName: string): Promise<void> {
+		if (groupId === 'system-admin' && permissionName === 'user-modification') {
+			throw new Error('Cannot revoke user-modification permission from system-admin group.');
+		}
+		await pool.query('DELETE FROM system_permissions WHERE group_id = ? AND permission_name = ?', [groupId, permissionName]);
 	}
 };

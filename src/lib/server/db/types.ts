@@ -277,4 +277,32 @@ export interface DatabaseAdapter {
 	* @type {boolean} True if the user has access, false otherwise
 	*/
 	hasInstanceAccess(userId: string, instanceId: string, permissionName?: string): Promise<boolean>;
+	
+	// System/Global Permissions Management
+	/*
+	* Checks if a user has a global system permission
+	* @param {string} userId - The ID of the user
+	* @param {string} permissionName - The name of the system permission (e.g. 'user-modification')
+	* @type {boolean} True if the user has the system permission
+	*/
+	hasSystemPermission(userId: string, permissionName: string): Promise<boolean>;
+	/*
+	* Gets all global system permissions for a group
+	* @param {string} groupId - The ID of the group
+	* @type {string[]} Array of system permission names
+	*/
+	getSystemPermissionsByGroup(groupId: string): Promise<string[]>;
+	/*
+	* Grants a global system permission to a group
+	* @param {string} groupId - The ID of the group
+	* @param {string} permissionName - The name of the system permission to grant
+	*/
+	grantSystemPermission(groupId: string, permissionName: string): Promise<void>;
+	/*
+	* Revokes a global system permission from a group
+	* @param {string} groupId - The ID of the group
+	* @param {string} permissionName - The name of the system permission to revoke
+	*/
+	revokeSystemPermission(groupId: string, permissionName: string): Promise<void>;
 }
+

@@ -1,15 +1,22 @@
+import { env } from '$env/dynamic/private';
 import { fail, redirect } from '@sveltejs/kit';
 import { db } from '$lib/server/db';
 import { randomBytes, scryptSync } from 'node:crypto';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
+	if (env.DISABLE_PUBLIC_REGISTRATION === 'true') {
+		throw redirect(303, '/login?error=registration_disabled');
+	}
 	// If already logged in, redirect
 	if (locals.user) throw redirect(303, '/');
 };
 
 export const actions: Actions = {
 	default: async ({ request, cookies }) => {
+		if (env.DISABLE_PUBLIC_REGISTRATION === 'true') {
+			return fail(403, { error: 'Public registration is disabled' });
+		}
 		const data = await request.formData();
 		const username = data.get('username')?.toString();
 		const password = data.get('password')?.toString();
