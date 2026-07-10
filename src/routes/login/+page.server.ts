@@ -23,12 +23,12 @@ export const actions: Actions = {
 		const password = data.get('password')?.toString();
 
 		if (!username || !password) {
-			return fail(400, { error: 'Benutzername und Passwort sind erforderlich', username });
+			return fail(400, { error: 'Invalid login credentials!', username });
 		}
 
 		const user = await db.getUserByUsername(username);
 		if (!user) {
-			return fail(401, { error: 'Ungültige Anmeldedaten', username });
+			return fail(401, { error: 'Invalid login credentials!', username });
 		}
 
 		try {
@@ -40,11 +40,11 @@ export const actions: Actions = {
 			const isValid = timingSafeEqual(hashToVerify, key);
 
 			if (!isValid) {
-				return fail(401, { error: 'Ungültige Anmeldedaten', username });
+				return fail(401, { error: 'Invalid login credentials!', username });
 			}
 		} catch (err) {
 			console.error('Error verifying password:', err);
-			return fail(500, { error: 'Interner Server-Fehler' });
+			return fail(500, { error: 'Internal Server Error!', username });
 		}
 
 		// Create Session
